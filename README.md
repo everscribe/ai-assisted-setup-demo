@@ -55,8 +55,7 @@ cd web && npm run dev
 
 ## What the auto-instrument should produce
 
-When you point Everscribe's auto-instrument feature at this repo, expect
-the resulting PR to:
+When you point Everscribe's auto-instrument feature at this repo, expect it to:
 
 1. Add `github.com/everscribe/sdk-go` to `go.mod`.
 2. Initialize a recorder + register the audit middleware in `main.go`.
