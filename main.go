@@ -1,4 +1,4 @@
-// ai-setup-example is a deliberately un-instrumented multi-tenant SaaS demo.
+// ai-assisted-setup-demo is a deliberately un-instrumented multi-tenant SaaS demo.
 //
 // The point of this repo is to be a clean target for Everscribe's
 // auto-instrument feature: clone it, run our hosted instrument flow
@@ -25,8 +25,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/everscribe/ai-setup-example/handlers"
-	"github.com/everscribe/ai-setup-example/store"
+	"github.com/everscribe/ai-assisted-setup-demo/handlers"
+	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
 //go:embed all:web/dist

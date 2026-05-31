@@ -5,7 +5,7 @@
 
 # Built server binary
 /server
-/ai-setup-example
+/ai-assisted-setup-demo
 
 # Node
 /web/node_modules

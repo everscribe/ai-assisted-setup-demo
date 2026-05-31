@@ -3,7 +3,7 @@ package store
 import (
 	"time"
 
-	"github.com/everscribe/ai-setup-example/models"
+	"github.com/everscribe/ai-assisted-setup-demo/models"
 )
 
 // Seed populates the store with two organizations, four users (two
