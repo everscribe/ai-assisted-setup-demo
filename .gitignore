@@ -1,0 +1,24 @@
+# Go
+/bin/
+*.test
+*.out
+
+# Built server binary
+/server
+/ai-setup-example
+
+# Node
+/web/node_modules
+/web/.vite
+
+# Built SPA artefacts — Vite overwrites web/dist on every build.
+# Keep the placeholder index.html in source control so `go build`
+# works before the first `npm run build`. .gitignore the rest.
+/web/dist/*
+!/web/dist/index.html
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
