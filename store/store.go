@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/everscribe/ai-setup-example/models"
+	"github.com/everscribe/ai-assisted-setup-demo/models"
 )
 
 // ErrNotFound is returned by lookups that don't find the resource or

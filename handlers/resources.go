@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/everscribe/ai-setup-example/models"
-	"github.com/everscribe/ai-setup-example/store"
+	"github.com/everscribe/ai-assisted-setup-demo/models"
+	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
 // ListResources returns every resource in the caller's organization

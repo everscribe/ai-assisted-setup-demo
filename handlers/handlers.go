@@ -14,8 +14,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/everscribe/ai-setup-example/models"
-	"github.com/everscribe/ai-setup-example/store"
+	"github.com/everscribe/ai-assisted-setup-demo/models"
+	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
 // actorFromRequest looks up the user identified by the X-User-ID header.

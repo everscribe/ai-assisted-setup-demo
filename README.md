@@ -1,4 +1,4 @@
-# ai-setup-example
+# ai-assisted-setup-demo
 
 A deliberately **un-instrumented** multi-tenant SaaS demo. The point of
 this repo is to be a clean target for Everscribe's auto-instrument
