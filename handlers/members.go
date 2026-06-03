@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/everscribe-go/everscribe"
 )
 
 // ListMembers returns every user in the caller's organization.
@@ -26,6 +27,7 @@ func ListMembers(s *store.Store) http.HandlerFunc {
 //
 // POST /api/members   {"name", "email", "role"} → User
 func InviteMember(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -58,6 +60,17 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, u)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.invited",
+			Category: "account",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"invited_user_id": u.ID,
+				"invited_email":   in.Email,
+				"role":            in.Role,
+			},
+		})
 	}
 }
 
@@ -65,6 +78,7 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 //
 // DELETE /api/members/{id} → 204
 func RemoveMember(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -74,11 +88,21 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		if err := s.RemoveMember(me.OrganizationID, r.PathValue("id")); err != nil {
+		targetID := r.PathValue("id")
+		if err := s.RemoveMember(me.OrganizationID, targetID); err != nil {
 			httpError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.removed",
+			Category: "account",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"removed_user_id": targetID,
+			},
+		})
 	}
 }
 
@@ -87,6 +111,7 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 //
 // PUT /api/members/{id}/role   {"role": "admin"} → User
 func ChangeMemberRole(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -112,5 +137,15 @@ func ChangeMemberRole(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, u)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.role.changed",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"target_user_id": u.ID,
+				"new_role":       in.Role,
+			},
+		})
 	}
 }
