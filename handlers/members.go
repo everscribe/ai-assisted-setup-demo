@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/everscribe-go"
 )
 
 // ListMembers returns every user in the caller's organization.
@@ -57,6 +58,18 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder := everscribe.NewFromEnv()
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.invited",
+			Category: "account",
+			TenantID: me.OrganizationID,
+			Actor:    me.ID,
+			Metadata: map[string]any{
+				"invited_user_id": u.ID,
+				"invited_email":   in.Email,
+				"role":            in.Role,
+			},
+		})
 		writeJSON(w, http.StatusCreated, u)
 	}
 }
@@ -74,10 +87,21 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		if err := s.RemoveMember(me.OrganizationID, r.PathValue("id")); err != nil {
+		targetID := r.PathValue("id")
+		if err := s.RemoveMember(me.OrganizationID, targetID); err != nil {
 			httpError(w, err)
 			return
 		}
+		recorder := everscribe.NewFromEnv()
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.removed",
+			Category: "account",
+			TenantID: me.OrganizationID,
+			Actor:    me.ID,
+			Metadata: map[string]any{
+				"removed_user_id": targetID,
+			},
+		})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -106,11 +130,23 @@ func ChangeMemberRole(s *store.Store) http.HandlerFunc {
 			http.Error(w, "role must be admin or member", http.StatusBadRequest)
 			return
 		}
-		u, err := s.UpdateMemberRole(me.OrganizationID, r.PathValue("id"), in.Role)
+		targetID := r.PathValue("id")
+		u, err := s.UpdateMemberRole(me.OrganizationID, targetID, in.Role)
 		if err != nil {
 			httpError(w, err)
 			return
 		}
+		recorder := everscribe.NewFromEnv()
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.role.changed",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			Actor:    me.ID,
+			Metadata: map[string]any{
+				"target_user_id": targetID,
+				"new_role":       in.Role,
+			},
+		})
 		writeJSON(w, http.StatusOK, u)
 	}
 }
