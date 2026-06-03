@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/everscribe-go"
 )
 
 // ListResources returns every resource in the caller's organization
@@ -30,6 +31,7 @@ func ListResources(s *store.Store) http.HandlerFunc {
 //
 // POST /api/resources   {"name", "description", "sensitivity"} → Resource
 func RegisterResource(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -62,6 +64,17 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "resource.registered",
+			Category: "admin",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"resource_id":   r2.ID,
+				"resource_name": r2.Name,
+				"sensitivity":   r2.Sensitivity,
+			},
+		})
 		writeJSON(w, http.StatusCreated, r2)
 	}
 }
@@ -72,6 +85,7 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 //
 // POST /api/resources/{id}/decommission → Resource
 func DecommissionResource(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -86,6 +100,16 @@ func DecommissionResource(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "resource.decommissioned",
+			Category: "admin",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"resource_id":   res.ID,
+				"resource_name": res.Name,
+			},
+		})
 		writeJSON(w, http.StatusOK, res)
 	}
 }
