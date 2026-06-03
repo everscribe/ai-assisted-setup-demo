@@ -4,9 +4,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/everscribe/everscribe-go/everscribe"
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
+
+// recorder is the package-level Everscribe audit recorder, initialised
+// once from the environment (EVERSCRIBE_API_KEY + EVERSCRIBE_PROJECT_ID).
+var recorder = everscribe.NewFromEnv()
 
 // ListResources returns every resource in the caller's organization
 // (including decommissioned ones — the UI grays them out instead of
@@ -62,6 +67,12 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), "resource.registered", "admin", me.OrganizationID, me.ID, map[string]any{
+			"resource_id":  r2.ID,
+			"name":         r2.Name,
+			"sensitivity":  r2.Sensitivity,
+			"description":  r2.Description,
+		})
 		writeJSON(w, http.StatusCreated, r2)
 	}
 }
@@ -86,6 +97,10 @@ func DecommissionResource(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), "resource.decommissioned", "admin", me.OrganizationID, me.ID, map[string]any{
+			"resource_id": res.ID,
+			"name":        res.Name,
+		})
 		writeJSON(w, http.StatusOK, res)
 	}
 }
