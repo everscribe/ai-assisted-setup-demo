@@ -2,9 +2,24 @@ package handlers
 
 import (
 	"net/http"
+	"sync"
 
+	"github.com/everscribe/everscribe-go"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
+
+// recorderOnce guards singleton construction of the Everscribe audit recorder.
+var (
+	recorderOnce sync.Once
+	recorder     *everscribe.Recorder
+)
+
+func getRecorder() *everscribe.Recorder {
+	recorderOnce.Do(func() {
+		recorder = everscribe.NewFromEnv()
+	})
+	return recorder
+}
 
 // Login signs a user in by email. There's no password — this is a demo,
 // the email picks one of the seeded users from the cast. The frontend
@@ -30,6 +45,15 @@ func Login(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, u)
+		getRecorder().Record(r.Context(), everscribe.Event{
+			Action:   "user.authenticated",
+			Category: "auth",
+			ActorID:  u.ID,
+			TenantID: u.OrganizationID,
+			Metadata: map[string]any{
+				"email": u.Email,
+			},
+		})
 	}
 }
 
@@ -40,12 +64,18 @@ func Login(s *store.Store) http.HandlerFunc {
 // POST /api/logout → 204
 func Logout(s *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, ok := actorFromRequest(r, s)
+		actor, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+		getRecorder().Record(r.Context(), everscribe.Event{
+			Action:   "user.session.ended",
+			Category: "auth",
+			ActorID:  actor.ID,
+			TenantID: actor.OrganizationID,
+		})
 	}
 }
 
@@ -61,5 +91,11 @@ func Me(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, u)
+		getRecorder().Record(r.Context(), everscribe.Event{
+			Action:   "user.authenticated.read",
+			Category: "auth",
+			ActorID:  u.ID,
+			TenantID: u.OrganizationID,
+		})
 	}
 }

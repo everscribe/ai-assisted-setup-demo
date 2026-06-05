@@ -10,6 +10,7 @@ import {
   type Resource,
   type User,
 } from './api.js'
+import { EverscribeEvents } from '@everscribe/react'
 
 // A handful of seeded email addresses ship with the Go backend; the
 // login screen renders these as quick-pick buttons so anyone landing
@@ -148,7 +149,7 @@ interface DashboardProps {
   onDismissError: () => void
 }
 
-type Tab = 'resources' | 'members'
+type Tab = 'resources' | 'members' | 'audit'
 
 function Dashboard(p: DashboardProps) {
   const [tab, setTab] = useState<Tab>('resources')
@@ -190,10 +191,20 @@ function Dashboard(p: DashboardProps) {
         >
           Members
         </button>
+        <button
+          role="tab"
+          className={tab === 'audit' ? 'active' : ''}
+          onClick={() => setTab('audit')}
+        >
+          Audit
+        </button>
       </nav>
 
       {tab === 'resources' && <ResourcesTab me={p.me} onError={p.onError} />}
       {tab === 'members' && <MembersTab me={p.me} onError={p.onError} />}
+      {tab === 'audit' && (
+        <EverscribeEvents tokenEndpoint="/api/everscribe/embed-token" />
+      )}
     </div>
   )
 }
