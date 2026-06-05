@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/everscribe-go/everscribe"
 )
 
 // Login signs a user in by email. There's no password — this is a demo,
@@ -13,6 +14,7 @@ import (
 //
 // POST /api/login   {"email": "ada@acme.test"} → User
 func Login(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Email string `json:"email"`
@@ -30,6 +32,11 @@ func Login(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, u)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "user.authenticated",
+			Category: "auth",
+			TenantID: u.OrganizationID,
+		})
 	}
 }
 
@@ -39,6 +46,7 @@ func Login(s *store.Store) http.HandlerFunc {
 //
 // POST /api/logout → 204
 func Logout(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, ok := actorFromRequest(r, s)
 		if !ok {
@@ -46,6 +54,11 @@ func Logout(s *store.Store) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "user.session.logged_out",
+			Category: "auth",
+			TenantID: r.Header.Get("X-User-ID"),
+		})
 	}
 }
 
@@ -54,6 +67,7 @@ func Logout(s *store.Store) http.HandlerFunc {
 //
 // GET /api/me → User
 func Me(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, ok := actorFromRequest(r, s)
 		if !ok {
@@ -61,5 +75,9 @@ func Me(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, u)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "session.authenticated.verified",
+			Category: "auth",
+		})
 	}
 }
