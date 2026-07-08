@@ -44,7 +44,7 @@ func (s *Store) Seed() {
 	resources := []*models.Resource{
 		{ID: "r_acme_pg", Name: "production-postgres", Description: "Primary customer database (us-east-1)", Sensitivity: models.SensitivityRestricted, OrganizationID: "org_acme", RegisteredBy: "u_ada", CreatedAt: yesterday},
 		{ID: "r_acme_s3", Name: "audit-logs-bucket", Description: "S3 bucket for archived audit logs", Sensitivity: models.SensitivityConfidential, OrganizationID: "org_acme", RegisteredBy: "u_ada", CreatedAt: yesterday},
-		{ID: "r_acme_stripe", Name: "stripe-live-dashboard", Description: "Live-mode Stripe console — refund + chargeback ops", Sensitivity: models.SensitivityRestricted, OrganizationID: "org_acme", RegisteredBy: "u_ada", CreatedAt: yesterday},
+		{ID: "r_acme_stripe", Name: "stripe-live-dashboard", Description: "Live-mode Stripe console - refund + chargeback ops", Sensitivity: models.SensitivityRestricted, OrganizationID: "org_acme", RegisteredBy: "u_ada", CreatedAt: yesterday},
 		{ID: "r_globex_k8s", Name: "k8s-prod-cluster", Description: "Production EKS cluster (kubectl admin)", Sensitivity: models.SensitivityRestricted, OrganizationID: "org_globex", RegisteredBy: "u_grace", CreatedAt: yesterday},
 		{ID: "r_globex_pagerduty", Name: "pagerduty-admin", Description: "PagerDuty account admin (rotation + escalation policies)", Sensitivity: models.SensitivityConfidential, OrganizationID: "org_globex", RegisteredBy: "u_grace", CreatedAt: yesterday},
 	}

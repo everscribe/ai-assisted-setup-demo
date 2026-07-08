@@ -7,14 +7,14 @@
 // (and drops the React audit-trail component into the SPA).
 //
 // Domain: internal access portal. Organizations (tenants) manage who has
-// access to internal resources — databases, prod environments, customer
+// access to internal resources - databases, prod environments, customer
 // data, third-party SaaS. Members request access with a reason; admins
 // approve, deny, or revoke. Every mutating handler is an audit-worthy
 // security event.
 //
 // Auth model is intentionally minimal: the SPA POSTs an email to
 // /api/login to look up a seeded user, then attaches X-User-ID on every
-// request. Real apps would use sessions or JWTs — the auto-instrument
+// request. Real apps would use sessions or JWTs - the auto-instrument
 // agent works with either shape.
 package main
 

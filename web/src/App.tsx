@@ -339,7 +339,7 @@ function ResourcesTab(p: ResourcesTabProps) {
           ))}
           {resources.length === 0 && !creating && (
             <li className="empty">
-              No resources yet — {isAdmin ? 'register one' : 'ask an admin to register one'}.
+              No resources yet - {isAdmin ? 'register one' : 'ask an admin to register one'}.
             </li>
           )}
         </ul>
@@ -629,7 +629,7 @@ function RequestCard(p: RequestCardProps) {
               <span className="muted small">Awaiting an admin's decision.</span>
             )}
             {p.request.status === 'denied' && (
-              <span className="muted small">Denied — file a new request to try again.</span>
+              <span className="muted small">Denied - file a new request to try again.</span>
             )}
             {p.request.status === 'revoked' && (
               <span className="muted small">Access has been revoked.</span>

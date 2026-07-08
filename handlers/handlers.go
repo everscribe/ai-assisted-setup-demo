@@ -43,7 +43,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // httpError surfaces a store error as an HTTP response. ErrNotFound → 404,
 // ErrForbidden → 403, anything else → 500. The body is the plain error
-// message — enough for the SPA's error banner.
+// message - enough for the SPA's error banner.
 func httpError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):

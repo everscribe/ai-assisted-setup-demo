@@ -12,7 +12,7 @@ the AI agent:
 - drop the `<AuditTrail />` React component into the SPA so you can see
   the events in your own UI.
 
-Nothing in this repo references Everscribe today. That's the contract —
+Nothing in this repo references Everscribe today. That's the contract -
 the auto-instrument is responsible for adding all of it.
 
 ## Run it locally
@@ -25,12 +25,12 @@ make dev
 ```
 
 Then open <http://localhost:9001>. Pick one of the four seeded users
-from the login screen and click around — request access to a resource,
+from the login screen and click around - request access to a resource,
 approve as an admin, leave review notes, revoke previously-granted
 access, register new resources, manage members.
 
 Domain: internal access portal. Organizations (tenants) manage who has
-access to internal resources — databases, production environments,
+access to internal resources - databases, production environments,
 customer-data tables, third-party SaaS consoles. Members file an access
 request with a reason; admins approve, deny, or revoke. Every mutating
 action is a real-world security event that belongs in an audit log.
@@ -46,10 +46,10 @@ For a faster inner loop, run the Vite dev server (port 5173) against
 the Go API in another terminal:
 
 ```bash
-# terminal 1 — Go API
+# terminal 1 - Go API
 go run .
 
-# terminal 2 — Vite with hot reload, /api proxied to the Go server
+# terminal 2 - Vite with hot reload, /api proxied to the Go server
 cd web && npm run dev
 ```
 
@@ -60,7 +60,7 @@ When you point Everscribe's auto-instrument feature at this repo, expect it to:
 1. Add `github.com/everscribe/sdk-go` to `go.mod`.
 2. Initialize a recorder + register the audit middleware in `main.go`.
 3. Add an `e.Action = "…"` + `e.TenantID = me.OrganizationID` call in
-   each mutating handler — covering at least:
+   each mutating handler - covering at least:
    - `user.login`, `user.logout`
    - `member.invited`, `member.removed`, `member.role.changed`
    - `resource.registered`, `resource.decommissioned`
@@ -79,7 +79,7 @@ the actor isn't bound to a tenant yet.
 - It must not touch the in-memory store or domain types.
 - It must not change the routing table beyond adding new endpoints
   (e.g. `/api/embed-token/*`).
-- It must not modify the React frontend's existing components — only add
+- It must not modify the React frontend's existing components - only add
   the audit-trail block.
 
 ## License

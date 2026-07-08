@@ -28,7 +28,7 @@ func ListResourceRequests(s *store.Store) http.HandlerFunc {
 }
 
 // RequestAccess submits a new pending access request against a resource.
-// Anyone in the organization can request — approval is gated separately.
+// Anyone in the organization can request - approval is gated separately.
 //
 // POST /api/resources/{id}/requests   {"reason"} → AccessRequest
 func RequestAccess(s *store.Store) http.HandlerFunc {
@@ -58,7 +58,7 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 	}
 }
 
-// ApproveRequest grants a pending request. Admin only — approving is
+// ApproveRequest grants a pending request. Admin only - approving is
 // the privileged decision in this domain.
 //
 // POST /api/requests/{id}/approve → AccessRequest
@@ -81,7 +81,7 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 	}
 }
 
-// DenyRequest refuses a pending request. Admin only. Denial is terminal —
+// DenyRequest refuses a pending request. Admin only. Denial is terminal -
 // the requester would need to file a fresh request to try again.
 //
 // POST /api/requests/{id}/deny → AccessRequest
@@ -105,7 +105,7 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 }
 
 // RevokeRequest pulls a previously-approved request back. Admin only.
-// This is the security-ops action — "I let them in, now I'm pulling
+// This is the security-ops action - "I let them in, now I'm pulling
 // them back out." Audit-critical: who revoked, when, why.
 //
 // POST /api/requests/{id}/revoke → AccessRequest
@@ -148,7 +148,7 @@ func ListRequestComments(s *store.Store) http.HandlerFunc {
 }
 
 // AddComment posts a review note on an access request. Used by approvers
-// to record context ("approved for 24h", "denied — over-broad scope")
+// to record context ("approved for 24h", "denied - over-broad scope")
 // and by requesters to add follow-up info.
 //
 // POST /api/requests/{id}/comments   {"body"} → Comment

@@ -6,7 +6,7 @@ import (
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
-// Login signs a user in by email. There's no password — this is a demo,
+// Login signs a user in by email. There's no password - this is a demo,
 // the email picks one of the seeded users from the cast. The frontend
 // stashes the returned user id in localStorage and sends it as
 // X-User-ID on every subsequent request.

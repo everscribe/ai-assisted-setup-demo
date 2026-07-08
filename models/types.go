@@ -1,7 +1,7 @@
 // Package models holds the JSON-serializable domain types shared between
 // handlers, the store, and the React frontend.
 //
-// Every resource carries an OrganizationID — this is a multi-tenant app,
+// Every resource carries an OrganizationID - this is a multi-tenant app,
 // and the organization is the tenant boundary. Handlers enforce that an
 // actor can only see/mutate resources in their own organization.
 //
@@ -21,7 +21,7 @@ type Organization struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// User is a person in the system. Role is "admin" or "member" — admins
+// User is a person in the system. Role is "admin" or "member" - admins
 // can manage memberships, register resources, and approve/deny/revoke
 // access requests; members can request access and comment.
 type User struct {
@@ -33,7 +33,7 @@ type User struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// Resource is something that can be requested access to — a database,
+// Resource is something that can be requested access to - a database,
 // a production environment, a customer-data table, a third-party SaaS,
 // etc. Resources are registered by admins and scoped to an organization.
 //
@@ -86,7 +86,7 @@ type Comment struct {
 	CreatedAt      time.Time `json:"created_at"`
 }
 
-// Access-request status constants — mirrored in the frontend.
+// Access-request status constants - mirrored in the frontend.
 const (
 	StatusPending  = "pending"
 	StatusApproved = "approved"
@@ -100,7 +100,7 @@ const (
 	RoleMember = "member"
 )
 
-// Sensitivity constants — free-form, but these four are seeded.
+// Sensitivity constants - free-form, but these four are seeded.
 const (
 	SensitivityPublic       = "public"
 	SensitivityInternal     = "internal"

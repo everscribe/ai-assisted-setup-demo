@@ -9,7 +9,7 @@ import (
 )
 
 // ListResources returns every resource in the caller's organization
-// (including decommissioned ones — the UI grays them out instead of
+// (including decommissioned ones - the UI grays them out instead of
 // hiding so historical context stays visible).
 //
 // GET /api/resources → []Resource
@@ -25,7 +25,7 @@ func ListResources(s *store.Store) http.HandlerFunc {
 }
 
 // RegisterResource adds a new resource to the caller's organization.
-// Admin only — registering a new resource defines what can be requested,
+// Admin only - registering a new resource defines what can be requested,
 // which is privileged.
 //
 // POST /api/resources   {"name", "description", "sensitivity"} → Resource

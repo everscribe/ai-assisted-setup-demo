@@ -1,5 +1,5 @@
 // Package store is the in-memory persistence layer for the demo. Everything
-// is mutex-guarded maps — there is no database. The store is rebuilt with
+// is mutex-guarded maps - there is no database. The store is rebuilt with
 // the seed cast on every server start so the demo is deterministic.
 //
 // Every read/write API takes an orgID and enforces it: cross-organization
@@ -22,13 +22,13 @@ import (
 // when the resource exists but lives in a different organization.
 var ErrNotFound = errors.New("not found")
 
-// ErrForbidden is returned when an action is structurally disallowed —
+// ErrForbidden is returned when an action is structurally disallowed -
 // e.g. a non-admin trying to manage members. Handlers translate this to
 // HTTP 403.
 var ErrForbidden = errors.New("forbidden")
 
 // ErrConflict is returned by state transitions that don't apply to the
-// resource's current state — e.g. approving a request that's already
+// resource's current state - e.g. approving a request that's already
 // denied. Handlers translate this to HTTP 409.
 var ErrConflict = errors.New("conflict")
 
@@ -131,7 +131,7 @@ func (s *Store) ListOrgMembers(orgID string) []*models.User {
 }
 
 // InviteMember creates a new user in an organization. Returns the new
-// user. Email collisions across organizations are allowed for this demo —
+// user. Email collisions across organizations are allowed for this demo -
 // real apps would unique on email globally.
 func (s *Store) InviteMember(orgID, name, email, role string) (*models.User, error) {
 	s.mu.Lock()
@@ -168,7 +168,7 @@ func (s *Store) RemoveMember(orgID, userID string) error {
 
 // UpdateMemberRole changes a user's role within an organization. Returns
 // ErrNotFound for cross-organization access. The new role replaces the
-// old one in place — same User pointer, mutated.
+// old one in place - same User pointer, mutated.
 func (s *Store) UpdateMemberRole(orgID, userID, role string) (*models.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -229,7 +229,7 @@ func (s *Store) RegisterResource(orgID, name, description, sensitivity, register
 }
 
 // DecommissionResource marks a resource as decommissioned (timestamps
-// only — the row stays so historical access requests still reference
+// only - the row stays so historical access requests still reference
 // something). Future requests against decommissioned resources are
 // rejected by RequestAccess.
 func (s *Store) DecommissionResource(orgID, resourceID string) (*models.Resource, error) {
