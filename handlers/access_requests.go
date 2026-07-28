@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/everscribe/everscribe-go"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
@@ -32,6 +33,7 @@ func ListResourceRequests(s *store.Store) http.HandlerFunc {
 //
 // POST /api/resources/{id}/requests   {"reason"} → AccessRequest
 func RequestAccess(s *store.Store) http.HandlerFunc {
+	recorder, _ := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -55,6 +57,17 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, req)
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "resource.access.requested",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]interface{}{
+				"resource_id": r.PathValue("id"),
+				"request_id":  req.ID,
+				"reason":      in.Reason,
+			},
+		})
 	}
 }
 
@@ -63,6 +76,7 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 //
 // POST /api/requests/{id}/approve → AccessRequest
 func ApproveRequest(s *store.Store) http.HandlerFunc {
+	recorder, _ := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -78,6 +92,15 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, req)
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "access_request.approved",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]interface{}{
+				"request_id": r.PathValue("id"),
+			},
+		})
 	}
 }
 
@@ -86,6 +109,7 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 //
 // POST /api/requests/{id}/deny → AccessRequest
 func DenyRequest(s *store.Store) http.HandlerFunc {
+	recorder, _ := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -101,6 +125,15 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, req)
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "accessRequest.denied",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]interface{}{
+				"request_id": r.PathValue("id"),
+			},
+		})
 	}
 }
 
@@ -110,6 +143,7 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 //
 // POST /api/requests/{id}/revoke → AccessRequest
 func RevokeRequest(s *store.Store) http.HandlerFunc {
+	recorder, _ := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -125,6 +159,15 @@ func RevokeRequest(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, req)
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "access_request.revoked",
+			Category: "security_ops",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]interface{}{
+				"request_id": r.PathValue("id"),
+			},
+		})
 	}
 }
 
@@ -153,6 +196,7 @@ func ListRequestComments(s *store.Store) http.HandlerFunc {
 //
 // POST /api/requests/{id}/comments   {"body"} → Comment
 func AddComment(s *store.Store) http.HandlerFunc {
+	recorder, _ := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -176,5 +220,15 @@ func AddComment(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusCreated, c)
+		recorder.Record(r.Context(), everscribe.Event{
+			Action:   "access_request.comment.added",
+			Category: "data",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]interface{}{
+				"request_id": r.PathValue("id"),
+				"comment_id": c.ID,
+			},
+		})
 	}
 }

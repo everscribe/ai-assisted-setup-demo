@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 
+	everscribe "github.com/everscribe/everscribe-go"
+
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
@@ -13,6 +15,7 @@ import (
 //
 // POST /api/login   {"email": "ada@acme.test"} → User
 func Login(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Email string `json:"email"`
@@ -30,6 +33,12 @@ func Login(s *store.Store) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, u)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "user.login.succeeded",
+			Category: "auth",
+			ActorID:  u.ID,
+			TenantID: u.OrganizationID,
+		})
 	}
 }
 
@@ -39,13 +48,20 @@ func Login(s *store.Store) http.HandlerFunc {
 //
 // POST /api/logout → 204
 func Logout(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, ok := actorFromRequest(r, s)
+		actor, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "user.session.ended",
+			Category: "auth",
+			ActorID:  actor.ID,
+			TenantID: actor.OrganizationID,
+		})
 	}
 }
 

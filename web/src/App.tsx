@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { EverscribeEvents } from '@everscribe/react'
 import {
   api,
   clearUserId,
@@ -148,7 +149,7 @@ interface DashboardProps {
   onDismissError: () => void
 }
 
-type Tab = 'resources' | 'members'
+type Tab = 'resources' | 'members' | 'audit'
 
 function Dashboard(p: DashboardProps) {
   const [tab, setTab] = useState<Tab>('resources')
@@ -190,10 +191,20 @@ function Dashboard(p: DashboardProps) {
         >
           Members
         </button>
+        <button
+          role="tab"
+          className={tab === 'audit' ? 'active' : ''}
+          onClick={() => setTab('audit')}
+        >
+          Audit
+        </button>
       </nav>
 
       {tab === 'resources' && <ResourcesTab me={p.me} onError={p.onError} />}
       {tab === 'members' && <MembersTab me={p.me} onError={p.onError} />}
+      {tab === 'audit' && (
+        <EverscribeEvents tokenEndpoint="/everscribe/embed-token" />
+      )}
     </div>
   )
 }
