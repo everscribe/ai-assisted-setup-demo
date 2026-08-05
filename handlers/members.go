@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/everscribe-go/everscribe"
 )
 
 // ListMembers returns every user in the caller's organization.
@@ -26,6 +27,7 @@ func ListMembers(s *store.Store) http.HandlerFunc {
 //
 // POST /api/members   {"name", "email", "role"} → User
 func InviteMember(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -57,6 +59,11 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.invited",
+			Category: "account",
+			TenantID: me.OrganizationID,
+		})
 		writeJSON(w, http.StatusCreated, u)
 	}
 }
@@ -65,6 +72,7 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 //
 // DELETE /api/members/{id} → 204
 func RemoveMember(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -78,6 +86,11 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.removed",
+			Category: "account",
+			TenantID: me.OrganizationID,
+		})
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -87,6 +100,7 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 //
 // PUT /api/members/{id}/role   {"role": "admin"} → User
 func ChangeMemberRole(s *store.Store) http.HandlerFunc {
+	recorder := everscribe.NewFromEnv()
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -111,6 +125,11 @@ func ChangeMemberRole(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Record(r.Context(), everscribe.Event{
+			Name:     "member.role.changed",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+		})
 		writeJSON(w, http.StatusOK, u)
 	}
 }

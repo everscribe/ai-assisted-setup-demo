@@ -5,7 +5,12 @@ import (
 	"strings"
 
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/everscribe-go/everscribe"
 )
+
+// recorder is the package-level Everscribe audit client, initialised once
+// from environment variables (EVERSCRIBE_API_KEY, EVERSCRIBE_PROJECT_ID).
+var recorder = everscribe.NewFromEnv()
 
 // ListResourceRequests returns every access request for a resource,
 // newest first. Workspace-scoped via the store.
@@ -54,6 +59,17 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Track(r.Context(), everscribe.Event{
+			Name:     "access_request.created",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"resource_id": r.PathValue("id"),
+				"request_id":  req.ID,
+				"reason":      in.Reason,
+			},
+		})
 		writeJSON(w, http.StatusCreated, req)
 	}
 }
@@ -77,6 +93,15 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Track(r.Context(), everscribe.Event{
+			Name:     "access.request.approved",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"request_id": r.PathValue("id"),
+			},
+		})
 		writeJSON(w, http.StatusOK, req)
 	}
 }
@@ -100,6 +125,15 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Track(r.Context(), everscribe.Event{
+			Name:     "access_request.denied",
+			Category: "authz",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"request_id": r.PathValue("id"),
+			},
+		})
 		writeJSON(w, http.StatusOK, req)
 	}
 }
@@ -124,6 +158,15 @@ func RevokeRequest(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Track(r.Context(), everscribe.Event{
+			Name:     "access.request.revoked",
+			Category: "security_ops",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"request_id": r.PathValue("id"),
+			},
+		})
 		writeJSON(w, http.StatusOK, req)
 	}
 }
@@ -175,6 +218,16 @@ func AddComment(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		recorder.Track(r.Context(), everscribe.Event{
+			Name:     "access_request.comment.added",
+			Category: "security_ops",
+			TenantID: me.OrganizationID,
+			ActorID:  me.ID,
+			Metadata: map[string]any{
+				"request_id": r.PathValue("id"),
+				"comment_id": c.ID,
+			},
+		})
 		writeJSON(w, http.StatusCreated, c)
 	}
 }
