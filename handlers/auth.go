@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/sdk-go/pkg/event"
 )
 
 // Login signs a user in by email. There's no password - this is a demo,
@@ -24,11 +25,21 @@ func Login(s *store.Store) http.HandlerFunc {
 			http.Error(w, "email required", http.StatusBadRequest)
 			return
 		}
+
+		// Name the event now — we know the target email and any subsequent
+		// exit (user not found → 401, or success) is audit-worthy.
+		e := event.Current(r.Context())
+		e.Action = "user.login"
+		e.Target = event.Target{Type: "user", ID: in.Email}
+
 		u, err := s.FindUserByEmail(in.Email)
 		if err != nil {
 			http.Error(w, "no user with that email", http.StatusUnauthorized)
 			return
 		}
+
+		e.TenantID = u.OrganizationID
+		e.Target = event.Target{Type: "user", ID: u.ID}
 		writeJSON(w, http.StatusOK, u)
 	}
 }
@@ -40,11 +51,17 @@ func Login(s *store.Store) http.HandlerFunc {
 // POST /api/logout → 204
 func Logout(s *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, ok := actorFromRequest(r, s)
+		e := event.Current(r.Context())
+		e.Action = "user.logout"
+
+		actor, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		e.TenantID = actor.OrganizationID
+		e.Target = event.Target{Type: "user", ID: actor.ID}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

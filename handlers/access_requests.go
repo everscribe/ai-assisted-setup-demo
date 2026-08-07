@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/everscribe/sdk-go/pkg/event"
+
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
@@ -49,6 +51,10 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 			http.Error(w, "reason required", http.StatusBadRequest)
 			return
 		}
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "accessrequest.created"
+		e.Target = event.Target{Type: "resource", ID: r.PathValue("id")}
 		req, err := s.RequestAccess(me.OrganizationID, r.PathValue("id"), me.ID, in.Reason)
 		if err != nil {
 			httpError(w, err)
@@ -69,6 +75,10 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "request.access.approved"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -92,6 +102,10 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access.request.denied"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -116,6 +130,10 @@ func RevokeRequest(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access_request.revoked"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -170,6 +188,10 @@ func AddComment(s *store.Store) http.HandlerFunc {
 			http.Error(w, "body required", http.StatusBadRequest)
 			return
 		}
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access_request.comment.added"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
 		c, err := s.AddComment(me.OrganizationID, r.PathValue("id"), me.ID, in.Body)
 		if err != nil {
 			httpError(w, err)

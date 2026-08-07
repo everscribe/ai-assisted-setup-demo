@@ -26,7 +26,10 @@ import (
 	"os"
 
 	"github.com/everscribe/ai-assisted-setup-demo/handlers"
+	"github.com/everscribe/ai-assisted-setup-demo/middleware"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/sdk-go"
+	"github.com/everscribe/sdk-go/pkg/event"
 )
 
 //go:embed all:web/dist
@@ -40,6 +43,13 @@ func main() {
 
 	st := store.New()
 	st.Seed()
+
+	es, err := everscribe.NewFromEnv()
+	if err != nil {
+		log.Fatalf("everscribe: %v", err)
+	}
+	rec := es.NewRecorder()
+	defer rec.Close()
 
 	api := http.NewServeMux()
 
@@ -76,6 +86,16 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	auditMW := event.Middleware(event.Options{
+		ActorResolver: middleware.ResolveActor(st),
+		Recorder:      rec,
+	})
+
+	// withSession plants the actor identity on the request context.
+	// The audit adapter is mounted inside it so ResolveActor always
+	// sees a populated context.
+	apiHandler := middleware.WithSession(st, auditMW(api))
+
 	// Static SPA. /api/* hits the API mux; everything else falls
 	// through to the embedded React build under web/dist.
 	staticHandler, err := newStaticHandler()
@@ -83,7 +103,7 @@ func main() {
 		log.Fatalf("static fs: %v", err)
 	}
 	root := http.NewServeMux()
-	root.Handle("/api/", api)
+	root.Handle("/api/", apiHandler)
 	root.Handle("/", staticHandler)
 
 	log.Printf("listening on http://localhost:%s", port)
