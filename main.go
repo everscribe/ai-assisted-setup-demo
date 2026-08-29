@@ -19,14 +19,20 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/everscribe/ai-assisted-setup-demo/handlers"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	everscribe "github.com/everscribe/sdk-go"
+	"github.com/everscribe/sdk-go/pkg/event"
 )
 
 //go:embed all:web/dist
@@ -40,6 +46,19 @@ func main() {
 
 	st := store.New()
 	st.Seed()
+
+	// Everscribe audit recorder. Credentials are read from
+	// EVERSCRIBE_PROJECT_ID and EVERSCRIBE_API_KEY.
+	es, err := everscribe.NewFromEnv()
+	if err != nil {
+		log.Fatalf("everscribe: %v", err)
+	}
+	rec := es.NewRecorder()
+
+	auditMW := event.Middleware(event.Options{
+		ActorResolver: resolveActor(st),
+		Recorder:      rec,
+	})
 
 	api := http.NewServeMux()
 
@@ -83,12 +102,34 @@ func main() {
 		log.Fatalf("static fs: %v", err)
 	}
 	root := http.NewServeMux()
-	root.Handle("/api/", api)
+	// Mount: withSession → auditMW → api handlers. withSession plants
+	// the authenticated user on the context; auditMW runs inside it and
+	// can therefore resolve the actor on every request.
+	root.Handle("/api/", withSession(st, auditMW(api)))
 	root.Handle("/", staticHandler)
 
-	log.Printf("listening on http://localhost:%s", port)
-	if err := http.ListenAndServe(":"+port, root); err != nil {
-		log.Fatal(err)
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{Addr: ":" + port, Handler: root}
+	go func() {
+		log.Printf("listening on http://localhost:%s", port)
+		if err := srv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Print(err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Print(err)
+	}
+	// Close after Shutdown so in-flight requests finish recording before
+	// the buffer is drained.
+	if err := rec.Close(); err != nil {
+		log.Printf("everscribe: drain incomplete: %v", err)
 	}
 }
 

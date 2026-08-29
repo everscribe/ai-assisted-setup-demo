@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/sdk-go/pkg/event"
 )
 
 // ListResources returns every resource in the caller's organization
@@ -36,6 +37,12 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.Action = "resource.registered"
+		e.TenantID = me.OrganizationID
+		e.Target = event.Target{Type: "resource"}
+
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -62,6 +69,7 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 			httpError(w, err)
 			return
 		}
+		e.Target.ID = r2.ID
 		writeJSON(w, http.StatusCreated, r2)
 	}
 }
@@ -78,6 +86,12 @@ func DecommissionResource(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.Action = "resource.decommissioned"
+		e.TenantID = me.OrganizationID
+		e.Target = event.Target{Type: "resource", ID: r.PathValue("id")}
+
 		if !requireAdmin(w, me) {
 			return
 		}

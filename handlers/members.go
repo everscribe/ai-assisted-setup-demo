@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/sdk-go/pkg/event"
 )
 
 // ListMembers returns every user in the caller's organization.
@@ -52,11 +53,18 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 		if in.Role != models.RoleAdmin && in.Role != models.RoleMember {
 			in.Role = models.RoleMember
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "member.invited"
+		e.Target = event.Target{Type: "user"}
+
 		u, err := s.InviteMember(me.OrganizationID, in.Name, in.Email, in.Role)
 		if err != nil {
 			httpError(w, err)
 			return
 		}
+		e.Target.ID = u.ID
 		writeJSON(w, http.StatusCreated, u)
 	}
 }
@@ -74,6 +82,12 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "member.removed"
+		e.Target = event.Target{Type: "user", ID: r.PathValue("id")}
+
 		if err := s.RemoveMember(me.OrganizationID, r.PathValue("id")); err != nil {
 			httpError(w, err)
 			return
@@ -106,6 +120,12 @@ func ChangeMemberRole(s *store.Store) http.HandlerFunc {
 			http.Error(w, "role must be admin or member", http.StatusBadRequest)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "member_role.changed"
+		e.Target = event.Target{Type: "user", ID: r.PathValue("id")}
+
 		u, err := s.UpdateMemberRole(me.OrganizationID, r.PathValue("id"), in.Role)
 		if err != nil {
 			httpError(w, err)
