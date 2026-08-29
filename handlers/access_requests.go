@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/everscribe/sdk-go/pkg/event"
+
 	"github.com/everscribe/ai-assisted-setup-demo/store"
 )
 
@@ -49,11 +51,18 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 			http.Error(w, "reason required", http.StatusBadRequest)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access.request.created"
+		e.Target = event.Target{Type: "access_request"}
+
 		req, err := s.RequestAccess(me.OrganizationID, r.PathValue("id"), me.ID, in.Reason)
 		if err != nil {
 			httpError(w, err)
 			return
 		}
+		e.Target.ID = req.ID
 		writeJSON(w, http.StatusCreated, req)
 	}
 }
@@ -69,6 +78,12 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access.request.approved"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
+
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -92,6 +107,12 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access.request.denied"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
+
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -116,6 +137,12 @@ func RevokeRequest(s *store.Store) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access.request.revoked"
+		e.Target = event.Target{Type: "access_request", ID: r.PathValue("id")}
+
 		if !requireAdmin(w, me) {
 			return
 		}
@@ -170,11 +197,18 @@ func AddComment(s *store.Store) http.HandlerFunc {
 			http.Error(w, "body required", http.StatusBadRequest)
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "access.request.comment.created"
+		e.Target = event.Target{Type: "comment"}
+
 		c, err := s.AddComment(me.OrganizationID, r.PathValue("id"), me.ID, in.Body)
 		if err != nil {
 			httpError(w, err)
 			return
 		}
+		e.Target.ID = c.ID
 		writeJSON(w, http.StatusCreated, c)
 	}
 }

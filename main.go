@@ -19,18 +19,47 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/everscribe/ai-assisted-setup-demo/handlers"
+	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/sdk-go/pkg/event"
+	"github.com/everscribe/sdk-go/pkg/everscribe"
 )
 
 //go:embed all:web/dist
 var staticFS embed.FS
+
+// sessionUserKey is the context key under which withSession plants the
+// authenticated *models.User for the duration of each request.
+type sessionUserKey struct{}
+
+// withSession reads the X-User-ID header, resolves it to a *models.User
+// via the store, and plants the result on the request context. Handlers
+// (and the Everscribe ActorResolver) read identity from that context key.
+// Requests with an unrecognised or missing header continue without a user;
+// individual handlers enforce authentication as before.
+func withSession(s *store.Store, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if id := r.Header.Get("X-User-ID"); id != "" {
+			if u, err := s.GetUser(id); err == nil {
+				// identity_source: main.go:52
+				ctx := context.WithValue(r.Context(), sessionUserKey{}, u)
+				r = r.WithContext(ctx)
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -40,6 +69,19 @@ func main() {
 
 	st := store.New()
 	st.Seed()
+
+	// ── Everscribe recorder ───────────────────────────────────────────────
+	es, err := everscribe.NewFromEnv()
+	if err != nil {
+		log.Fatalf("everscribe: %v", err)
+	}
+	rec := es.NewRecorder()
+	m := es.NewMinter()
+
+	auditMW := event.Middleware(event.Options{
+		ActorResolver: resolveActor,
+		Recorder:      rec,
+	})
 
 	api := http.NewServeMux()
 
@@ -82,13 +124,44 @@ func main() {
 	if err != nil {
 		log.Fatalf("static fs: %v", err)
 	}
+
+	// withSession plants identity on the context; auditMW runs inside it
+	// so the ActorResolver can read the planted user.
+	apiHandler := withSession(st, auditMW(api))
+
 	root := http.NewServeMux()
-	root.Handle("/api/", api)
+	root.Handle("/api/", apiHandler)
+
+	// Everscribe embed-token endpoint. Mounted outside /api/ so it is
+	// reachable at the path the React component expects, but still runs
+	// through withSession so actorFromRequest can authenticate the caller.
+	root.Handle("POST /everscribe/embed-token",
+		withSession(st, handlers.EverscribeEmbedToken(m)))
+
 	root.Handle("/", staticHandler)
 
-	log.Printf("listening on http://localhost:%s", port)
-	if err := http.ListenAndServe(":"+port, root); err != nil {
-		log.Fatal(err)
+	// ── Graceful shutdown ─────────────────────────────────────────────────
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{Addr: ":" + port, Handler: root}
+	go func() {
+		log.Printf("listening on http://localhost:%s", port)
+		if err := srv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Print(err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Printf("http shutdown: %v", err)
+	}
+	// Drain the recorder after in-flight requests finish.
+	if err := rec.Close(); err != nil {
+		log.Printf("everscribe: drain incomplete: %v", err)
 	}
 }
 
