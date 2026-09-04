@@ -6,6 +6,7 @@ import (
 
 	"github.com/everscribe/ai-assisted-setup-demo/models"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/sdk-go/pkg/event"
 )
 
 // ListResources returns every resource in the caller's organization
@@ -57,11 +58,18 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 		if in.Sensitivity == "" {
 			in.Sensitivity = models.SensitivityInternal
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "resource.registered"
+		e.Target = event.Target{Type: "resource"}
+
 		r2, err := s.RegisterResource(me.OrganizationID, in.Name, in.Description, in.Sensitivity, me.ID)
 		if err != nil {
 			httpError(w, err)
 			return
 		}
+		e.Target.ID = r2.ID
 		writeJSON(w, http.StatusCreated, r2)
 	}
 }
@@ -81,6 +89,12 @@ func DecommissionResource(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
+
+		e := event.Current(r.Context())
+		e.TenantID = me.OrganizationID
+		e.Action = "resource.decommissioned"
+		e.Target = event.Target{Type: "resource", ID: r.PathValue("id")}
+
 		res, err := s.DecommissionResource(me.OrganizationID, r.PathValue("id"))
 		if err != nil {
 			httpError(w, err)

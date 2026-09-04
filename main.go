@@ -19,14 +19,22 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/everscribe/ai-assisted-setup-demo/handlers"
+	"github.com/everscribe/ai-assisted-setup-demo/internal/audit"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	everscribe "github.com/everscribe/sdk-go"
+	"github.com/everscribe/sdk-go/pkg/event"
+	"github.com/everscribe/sdk-go/pkg/recorder"
 )
 
 //go:embed all:web/dist
@@ -40,6 +48,40 @@ func main() {
 
 	st := store.New()
 	st.Seed()
+
+	// Everscribe: reads EVERSCRIBE_PROJECT_ID and EVERSCRIBE_API_KEY from
+	// the environment. Neither value is embedded in source.
+	projectID := os.Getenv("EVERSCRIBE_PROJECT_ID")
+	apiKey := os.Getenv("EVERSCRIBE_API_KEY")
+	rec := recorder.New(projectID, apiKey, recorder.WithBufferSize(2000))
+
+	// Construct the root Everscribe client and minter once at boot.
+	es, err := everscribe.New(projectID, apiKey)
+	if err != nil {
+		log.Fatalf("everscribe: %v", err)
+	}
+	m := es.NewMinter()
+
+	// withSession reads the X-User-ID header, resolves the user from the
+	// store, and plants it on the request context. The audit adapter runs
+	// inside withSession so its ActorResolver always sees a resolved user.
+	withSession := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id := r.Header.Get("X-User-ID")
+			if id != "" {
+				if u, err := st.GetUser(id); err == nil {
+					ctx := context.WithValue(r.Context(), audit.UserContextKey{}, u)
+					r = r.WithContext(ctx)
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	auditMW := event.Middleware(event.Options{
+		ActorResolver: audit.ActorResolver,
+		Recorder:      rec,
+	})
 
 	api := http.NewServeMux()
 
@@ -83,12 +125,34 @@ func main() {
 		log.Fatalf("static fs: %v", err)
 	}
 	root := http.NewServeMux()
-	root.Handle("/api/", api)
+	// Wrap the API mux: session middleware first, then audit adapter, then routes.
+	root.Handle("/api/", withSession(auditMW(api)))
+	// Everscribe embed-token endpoint: session middleware so actorFromRequest
+	// resolves the signed-in user, but outside /api/ to keep it distinct.
+	root.Handle("/everscribe/embed-token", withSession(http.HandlerFunc(handlers.EverscribeEmbedToken(m))))
 	root.Handle("/", staticHandler)
 
-	log.Printf("listening on http://localhost:%s", port)
-	if err := http.ListenAndServe(":"+port, root); err != nil {
-		log.Fatal(err)
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{Addr: ":" + port, Handler: root}
+	go func() {
+		log.Printf("listening on http://localhost:%s", port)
+		if err := srv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Print(err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
+	// Drain the recorder only after in-flight requests have finished.
+	if err := rec.Close(); err != nil {
+		log.Printf("everscribe: drain incomplete: %v", err)
 	}
 }
 
