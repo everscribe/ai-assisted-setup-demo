@@ -19,14 +19,22 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/everscribe/ai-assisted-setup-demo/handlers"
+	"github.com/everscribe/ai-assisted-setup-demo/internal/audit"
 	"github.com/everscribe/ai-assisted-setup-demo/store"
+	everscribe "github.com/everscribe/sdk-go"
+	"github.com/everscribe/sdk-go/pkg/event"
+	"github.com/everscribe/sdk-go/pkg/recorder"
 )
 
 //go:embed all:web/dist
@@ -40,6 +48,23 @@ func main() {
 
 	st := store.New()
 	st.Seed()
+
+	// ── Everscribe audit recorder ────────────────────────────────────────────
+	es, err := everscribe.NewFromEnv()
+	if err != nil {
+		log.Fatalf("everscribe: %v", err)
+	}
+	rec := es.NewRecorder(recorder.WithBufferSize(2000))
+
+	auditMW := event.Middleware(event.Options{
+		ActorResolver: audit.ResolveActor(st),
+		Recorder:      rec,
+	})
+	// ────────────────────────────────────────────────────────────────────────
+
+	// ── Everscribe embed token minter ────────────────────────────────────────
+	m := es.NewMinter()
+	// ────────────────────────────────────────────────────────────────────────
 
 	api := http.NewServeMux()
 
@@ -76,6 +101,11 @@ func main() {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
+	// Wire: WithSession plants identity → auditMW reads it via ActorResolver.
+	// Order matters: WithSession must be outermost so identity is on the
+	// context before the audit adapter's ActorResolver runs.
+	apiHandler := handlers.WithSession(st, auditMW(api))
+
 	// Static SPA. /api/* hits the API mux; everything else falls
 	// through to the embedded React build under web/dist.
 	staticHandler, err := newStaticHandler()
@@ -83,13 +113,39 @@ func main() {
 		log.Fatalf("static fs: %v", err)
 	}
 	root := http.NewServeMux()
-	root.Handle("/api/", api)
+	root.Handle("/api/", apiHandler)
+
+	// Everscribe embed-token minter route. Registered on the root mux so
+	// it is reachable at the path the SPA's <AuditTrail> component posts
+	// to. The handler enforces X-User-ID auth itself.
+	root.HandleFunc("POST /everscribe/embed-token", handlers.EmbedToken(m, st))
+
 	root.Handle("/", staticHandler)
 
-	log.Printf("listening on http://localhost:%s", port)
-	if err := http.ListenAndServe(":"+port, root); err != nil {
-		log.Fatal(err)
+	// ── Graceful shutdown ────────────────────────────────────────────────────
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{Addr: ":" + port, Handler: root}
+	go func() {
+		log.Printf("listening on http://localhost:%s", port)
+		if err := srv.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Print(err)
+			stop()
+		}
+	}()
+
+	<-ctx.Done()
+	if err := srv.Shutdown(context.Background()); err != nil {
+		log.Printf("shutdown: %v", err)
 	}
+	// Close after Shutdown so in-flight requests finish recording first.
+	if err := rec.Close(); err != nil {
+		log.Printf("everscribe: drain incomplete: %v", err)
+	}
+	// ────────────────────────────────────────────────────────────────────────
 }
 
 func newStaticHandler() (http.Handler, error) {
