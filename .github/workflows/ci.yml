@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: no everscribe dependency on main
+        run: make check-clean
+      - name: the guard itself still works
+        run: ./scripts/check-clean-test.sh
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: cd apps/go && go build ./... && go vet ./...
+      - run: cd apps/go && go test ./... -count=1
