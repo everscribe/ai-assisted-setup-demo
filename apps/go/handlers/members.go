@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/everscribe/ai-assisted-setup-demo/models"
-	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
 // ListMembers returns every user in the caller's organization.

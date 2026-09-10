@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
 // ListResourceRequests returns every access request for a resource,

@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
 // Login signs a user in by email. There's no password - this is a demo,

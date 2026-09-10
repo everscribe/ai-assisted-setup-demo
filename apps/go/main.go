@@ -25,8 +25,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/everscribe/ai-assisted-setup-demo/handlers"
-	"github.com/everscribe/ai-assisted-setup-demo/store"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/handlers"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
 //go:embed all:web/dist
