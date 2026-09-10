@@ -448,7 +448,6 @@ been run against a tree with a planted violation in each of the five
 ecosystems and observed to exit non-zero, and against a clean tree and
 observed to exit zero. A guard that reports clean on a dirty tree is worse
 than no guard, because it gets trusted.
-contract is written down.
 
 **Plan 2: conformance harness.** Build the runner and the normalizer against
 the single Go app. It cannot yet compare across apps, so it runs the schema
