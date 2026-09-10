@@ -16,9 +16,9 @@ import (
 // its own seed, so this is what stops the four from drifting.
 //
 // Organizations have no dedicated route in this API, so they are not
-// checked here. Users, resources, and access requests are compared
-// field for field; comments are seeded empty, so that collection is
-// checked by asserting the app actually serves none.
+// checked here and nothing in this repo can verify them. Users,
+// resources, access requests, and comments are compared field for
+// field.
 func TestSeedMatchesContract(t *testing.T) {
 	t.Parallel()
 	r := newRouter(t)
@@ -84,7 +84,7 @@ func TestSeedMatchesContract(t *testing.T) {
 	})
 
 	t.Run("comments", func(t *testing.T) {
-		require.Empty(t, want.Comments, "seed.json declares comments seeded empty")
+		var got []map[string]any
 		for _, req := range gotRequests {
 			reqID, _ := req["id"].(string)
 			orgID, _ := req["organization_id"].(string)
@@ -92,9 +92,44 @@ func TestSeedMatchesContract(t *testing.T) {
 			require.Equal(t, http.StatusOK, w.Code)
 			var comments []map[string]any
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &comments))
-			require.Empty(t, comments, "seeded request %s must have no comments", reqID)
+			got = append(got, comments...)
 		}
+		require.NotEmpty(t, want.Comments, "seed.json must fixture the comment ordering")
+		requireSameByID(t, want.Comments, got)
 	})
+}
+
+// TestSeedFixturesBothOrderings pins the served order of the two list
+// endpoints that declare one. Each group holds a pair tied on created_at,
+// so an implementation missing the id tiebreak fails here even though
+// TestSeedMatchesContract, which compares order-insensitively, passes.
+func TestSeedFixturesBothOrderings(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	t.Run("requests are created_at desc then id asc", func(t *testing.T) {
+		w := do(t, r, http.MethodGet, "/api/resources/r_acme_pg/requests", "u_ada", "")
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, []string{"req_acme_1", "req_acme_4", "req_acme_5"}, idsOf(t, w.Body.Bytes()))
+	})
+
+	t.Run("comments are created_at asc then id asc", func(t *testing.T) {
+		w := do(t, r, http.MethodGet, "/api/requests/req_acme_1/comments", "u_ada", "")
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, []string{"c_acme_1", "c_acme_2", "c_acme_3"}, idsOf(t, w.Body.Bytes()))
+	})
+}
+
+// idsOf pulls the id field out of a JSON array, preserving order.
+func idsOf(t *testing.T, body []byte) []string {
+	t.Helper()
+	var records []map[string]any
+	require.NoError(t, json.Unmarshal(body, &records))
+	ids := make([]string, 0, len(records))
+	for _, rec := range records {
+		ids = append(ids, rec["id"].(string))
+	}
+	return ids
 }
 
 // requireSameByID compares two record sets regardless of the order

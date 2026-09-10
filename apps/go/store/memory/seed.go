@@ -8,8 +8,16 @@ import (
 )
 
 // Seed populates the store with two organizations, four seeded users,
-// a handful of resources, and access requests in every state. IDs are
-// fixed so the frontend's quick-pick login is stable across restarts.
+// a handful of resources, access requests in every state, and comments.
+// IDs are fixed so the frontend's quick-pick login is stable across
+// restarts.
+//
+// The cast is also the ordering fixture the four ports are checked
+// against: r_acme_pg carries three requests and req_acme_1 carries three
+// comments, in each case with one pair tied on created_at so the id
+// tiebreak has something to decide. Both groups are listed here in an
+// order that is wrong for the declared sort, so an implementation that
+// serves insertion order fails.
 func (s *Store) Seed(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -55,11 +63,30 @@ func (s *Store) Seed(ctx context.Context) error {
 	}
 
 	// --- Access requests across all four states ---
+	//
+	// The first three all sit on r_acme_pg and are listed newest-tie
+	// first on purpose. Served order is req_acme_1, req_acme_4,
+	// req_acme_5: req_acme_1 and req_acme_4 tie on created_at and split
+	// on id ascending, and req_acme_5 is older so it sorts last.
 	requests := []*models.AccessRequest{
+		{
+			ID: "req_acme_4", ResourceID: "r_acme_pg", OrganizationID: "org_acme",
+			RequestedBy: "u_linus", Reason: "Re-run last quarter's revenue backfill.",
+			Status:    models.StatusDenied,
+			DecidedBy: "u_ada", DecidedAt: &now,
+			CreatedAt: now,
+		},
 		{
 			ID: "req_acme_1", ResourceID: "r_acme_pg", OrganizationID: "org_acme",
 			RequestedBy: "u_linus", Reason: "Debug a stuck payment intent (#PAY-4821).",
 			Status: models.StatusPending, CreatedAt: now,
+		},
+		{
+			ID: "req_acme_5", ResourceID: "r_acme_pg", OrganizationID: "org_acme",
+			RequestedBy: "u_linus", Reason: "Verify the read replica lag alert.",
+			Status:    models.StatusApproved,
+			DecidedBy: "u_ada", DecidedAt: &now,
+			CreatedAt: earlier,
 		},
 		{
 			ID: "req_acme_2", ResourceID: "r_acme_stripe", OrganizationID: "org_acme",
@@ -94,6 +121,38 @@ func (s *Store) Seed(ctx context.Context) error {
 	for _, req := range requests {
 		s.requests[req.ID] = req
 		s.requestsByRes[req.ResourceID] = append(s.requestsByRes[req.ResourceID], req.ID)
+	}
+
+	// --- Comments ---
+	//
+	// The three on req_acme_1 are listed out of order on purpose. Served
+	// order is c_acme_1, c_acme_2, c_acme_3: c_acme_1 is oldest, and
+	// c_acme_2 and c_acme_3 tie on created_at and split on id ascending.
+	comments := []*models.Comment{
+		{
+			ID: "c_acme_3", RequestID: "req_acme_1", OrganizationID: "org_acme",
+			AuthorID: "u_linus", Body: "Will drop the grant as soon as PAY-4821 closes.",
+			CreatedAt: now,
+		},
+		{
+			ID: "c_acme_2", RequestID: "req_acme_1", OrganizationID: "org_acme",
+			AuthorID: "u_ada", Body: "Confirmed with the on-call lead. Approving for 24 hours.",
+			CreatedAt: now,
+		},
+		{
+			ID: "c_acme_1", RequestID: "req_acme_1", OrganizationID: "org_acme",
+			AuthorID: "u_linus", Body: "Scope is the payments schema, read-only.",
+			CreatedAt: earlier,
+		},
+		{
+			ID: "c_globex_1", RequestID: "req_globex_2", OrganizationID: "org_globex",
+			AuthorID: "u_grace", Body: "Revoked once the rotation change landed.",
+			CreatedAt: earlier,
+		},
+	}
+	for _, cm := range comments {
+		s.comments[cm.ID] = cm
+		s.commentsByReq[cm.RequestID] = append(s.commentsByReq[cm.RequestID], cm.ID)
 	}
 
 	return nil

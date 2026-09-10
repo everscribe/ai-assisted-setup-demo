@@ -1,13 +1,18 @@
 {
+  "_notes": {
+    "organizations": "No route in this API exposes organizations, so no conformance test can verify this collection. It is here only so a port author can hardcode the same two tenant rows. A passing seed test says nothing about it.",
+    "ordering": "r_acme_pg carries three access requests and req_acme_1 carries three comments, in each case with one pair tied on created_at, so both declared orderings and the id tiebreak have a fixture. Expected served order: GET /api/resources/r_acme_pg/requests is [req_acme_1, req_acme_4, req_acme_5]; GET /api/requests/req_acme_1/comments is [c_acme_1, c_acme_2, c_acme_3].",
+    "timestamps": "Every created_at, decided_at and revoked_at here is RFC 3339 in UTC with a Z suffix and no sub-second component. Emitting +00:00 or a milliseconds field breaks the comparison."
+  },
   "organizations": [
     {"id": "org_acme", "name": "Acme Corp", "created_at": "2026-03-13T12:00:00Z"},
     {"id": "org_globex", "name": "Globex", "created_at": "2026-03-13T12:00:00Z"}
   ],
   "users": [
     {"id": "u_ada", "name": "Ada Lovelace", "email": "ada@acme.test", "role": "admin", "organization_id": "org_acme", "created_at": "2026-03-13T12:00:00Z"},
-    {"id": "u_linus", "name": "Linus Torvalds", "email": "linus@acme.test", "role": "member", "organization_id": "org_acme", "created_at": "2026-03-13T12:00:00Z"},
+    {"id": "u_alan", "name": "Alan Turing", "email": "alan@globex.test", "role": "member", "organization_id": "org_globex", "created_at": "2026-03-13T12:00:00Z"},
     {"id": "u_grace", "name": "Grace Hopper", "email": "grace@globex.test", "role": "admin", "organization_id": "org_globex", "created_at": "2026-03-13T12:00:00Z"},
-    {"id": "u_alan", "name": "Alan Turing", "email": "alan@globex.test", "role": "member", "organization_id": "org_globex", "created_at": "2026-03-13T12:00:00Z"}
+    {"id": "u_linus", "name": "Linus Torvalds", "email": "linus@acme.test", "role": "member", "organization_id": "org_acme", "created_at": "2026-03-13T12:00:00Z"}
   ],
   "resources": [
     {"id": "r_acme_pg", "name": "production-postgres", "description": "Primary customer database (us-east-1)", "sensitivity": "restricted", "organization_id": "org_acme", "registered_by": "u_ada", "created_at": "2026-03-13T12:00:00Z"},
@@ -20,8 +25,15 @@
     {"id": "req_acme_1", "resource_id": "r_acme_pg", "organization_id": "org_acme", "requested_by": "u_linus", "reason": "Debug a stuck payment intent (#PAY-4821).", "status": "pending", "created_at": "2026-03-14T12:00:00Z"},
     {"id": "req_acme_2", "resource_id": "r_acme_stripe", "organization_id": "org_acme", "requested_by": "u_linus", "reason": "Process a chargeback for customer ACME-203.", "status": "approved", "decided_by": "u_ada", "decided_at": "2026-03-14T10:00:00Z", "created_at": "2026-03-14T09:00:00Z"},
     {"id": "req_acme_3", "resource_id": "r_acme_s3", "organization_id": "org_acme", "requested_by": "u_linus", "reason": "Pull logs for the SOC2 evidence locker.", "status": "denied", "decided_by": "u_ada", "decided_at": "2026-03-13T12:00:00Z", "created_at": "2026-03-13T11:00:00Z"},
+    {"id": "req_acme_4", "resource_id": "r_acme_pg", "organization_id": "org_acme", "requested_by": "u_linus", "reason": "Re-run last quarter's revenue backfill.", "status": "denied", "decided_by": "u_ada", "decided_at": "2026-03-14T12:00:00Z", "created_at": "2026-03-14T12:00:00Z"},
+    {"id": "req_acme_5", "resource_id": "r_acme_pg", "organization_id": "org_acme", "requested_by": "u_linus", "reason": "Verify the read replica lag alert.", "status": "approved", "decided_by": "u_ada", "decided_at": "2026-03-14T12:00:00Z", "created_at": "2026-03-14T10:00:00Z"},
     {"id": "req_globex_1", "resource_id": "r_globex_k8s", "organization_id": "org_globex", "requested_by": "u_alan", "reason": "Roll a hotfix for the on-call escalation bug.", "status": "approved", "decided_by": "u_grace", "decided_at": "2026-03-14T10:00:00Z", "created_at": "2026-03-14T09:30:00Z"},
     {"id": "req_globex_2", "resource_id": "r_globex_pagerduty", "organization_id": "org_globex", "requested_by": "u_alan", "reason": "Update the after-hours escalation policy.", "status": "revoked", "decided_by": "u_grace", "decided_at": "2026-03-13T12:00:00Z", "revoked_by": "u_grace", "revoked_at": "2026-03-14T10:00:00Z", "created_at": "2026-03-13T10:00:00Z"}
   ],
-  "comments": []
+  "comments": [
+    {"id": "c_acme_1", "request_id": "req_acme_1", "organization_id": "org_acme", "author_id": "u_linus", "body": "Scope is the payments schema, read-only.", "created_at": "2026-03-14T10:00:00Z"},
+    {"id": "c_acme_2", "request_id": "req_acme_1", "organization_id": "org_acme", "author_id": "u_ada", "body": "Confirmed with the on-call lead. Approving for 24 hours.", "created_at": "2026-03-14T12:00:00Z"},
+    {"id": "c_acme_3", "request_id": "req_acme_1", "organization_id": "org_acme", "author_id": "u_linus", "body": "Will drop the grant as soon as PAY-4821 closes.", "created_at": "2026-03-14T12:00:00Z"},
+    {"id": "c_globex_1", "request_id": "req_globex_2", "organization_id": "org_globex", "author_id": "u_grace", "body": "Revoked once the rotation change landed.", "created_at": "2026-03-14T10:00:00Z"}
+  ]
 }
