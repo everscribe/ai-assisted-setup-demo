@@ -52,14 +52,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("static fs: %v", err)
 	}
-	root := http.NewServeMux()
-	root.Handle("/api/", api)
-	root.Handle("/", staticHandler)
+	root := newRootMux(api, staticHandler)
 
 	log.Printf("listening on http://localhost:%s", port)
 	if err := http.ListenAndServe(":"+port, root); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// newRootMux mounts the API under /api and the SPA everywhere else.
+// Both "/api" and "/api/" are registered: with only the subtree, the mux
+// answers a bare GET /api with a 301 and an HTML body, which is the same
+// existence oracle the router closes for trailing slashes, on an
+// otherwise all-JSON API.
+func newRootMux(api, static http.Handler) *http.ServeMux {
+	root := http.NewServeMux()
+	root.Handle("/api", api)
+	root.Handle("/api/", api)
+	root.Handle("/", static)
+	return root
 }
 
 func newStaticHandler() (http.Handler, error) {

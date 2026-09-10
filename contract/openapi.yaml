@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Access portal demo
   version: "1.0.0"
-  description: >
+  description: |
     The contract all four demo apps implement. Written from the Go app's
     behaviour. Every app registers exactly these eighteen routes.
 
@@ -12,6 +12,7 @@ info:
     route requires X-User-ID to name a seeded user or it fails with 401.
 
     Status codes used across the API, beyond the per-route 2xx:
+
     - 400: request body missing or invalid for that route.
     - 401: X-User-ID is missing or does not match a known user.
     - 403: the actor is authenticated but not an admin, on an admin-only
@@ -27,13 +28,91 @@ info:
       for example approving a request that is already denied, or
       requesting access to a decommissioned resource.
 
+    Check order is part of the contract, not an implementation detail.
+    A request that would fail more than one of the checks above fails on
+    the first one in this order:
+
+      401 authentication, then 403 admin role, then 400 body parsing and
+      field validation, then the store's 404 or 409.
+
+    So a member POSTing an unparseable body to POST /api/resources gets
+    403, not 400, because the admin check runs before the body is read.
+    A member POSTing an unparseable body to POST
+    /api/resources/{unknown}/requests gets 400, not 404, because that
+    route has no admin check and the body is read before the store is
+    touched. A port must not let its framework reorder this. Binding a
+    request model as a route parameter, which is what FastAPI does with
+    a Pydantic body model and what Express does with a validating body
+    parser, runs validation before the handler's role check and would
+    answer 422 or 400 where this contract requires 403. Do the auth and
+    role checks inside the handler, ahead of any body parsing.
+
+    Input trimming is part of the contract. Leading and trailing
+    whitespace is stripped before the value is validated and before it
+    is stored, from these fields:
+
+    - name, description, and sensitivity on POST /api/resources.
+    - name and email on POST /api/members.
+    - reason on POST /api/resources/{id}/requests.
+    - body on POST /api/requests/{id}/comments.
+
+    A required field that trims to empty is a 400 carrying that route's
+    message: {"error": "name required"} for a resource,
+    {"error": "name and email required"} for a member,
+    {"error": "reason required"} for an access request, and
+    {"error": "body required"} for a comment. description and
+    sensitivity are trimmed but not required; an omitted or empty
+    sensitivity becomes "internal".
+
+    Two fields are pointedly not trimmed. The email on POST /api/login
+    is matched exactly, so " ada@acme.test " is
+    {"error": "no user with that email"} with a 401, not a login, while
+    an email that is absent or the empty string is
+    {"error": "email required"} with a 400. The role on PUT
+    /api/members/{id}/role is compared exactly, so " admin " is
+    {"error": "role must be admin or member"} with a 400.
+
+    Timestamps are RFC 3339 in UTC with a literal Z suffix, for example
+    2026-03-14T12:00:00Z. Never a numeric offset such as +00:00, never a
+    local time, and never a separator other than T. Every timestamp in
+    contract/seed.json has whole-second precision with no fractional
+    part, so an implementation that appends .000 or writes +00:00 fails
+    the seed comparison even though it names the same instant. Only
+    timestamps minted at runtime, on records the seed does not cover,
+    may carry a fractional part; its digit count is not specified.
+
+    HEAD and OPTIONS are registered on no route and return 405 with the
+    same JSON body as any other method mismatch. HEAD /api/health is a
+    405, not an empty 200. This needs pinning because Starlette and
+    Express both route HEAD to the GET handler automatically, and
+    frameworks commonly answer OPTIONS themselves; both behaviours must
+    be turned off.
+
+    The error string in a 400 body is not normative. The Go app appends
+    its JSON decoder's own message, which produces text no other
+    language can reproduce, for example "invalid body: json: cannot
+    unmarshal number into Go struct field .email of type string". Only
+    the 400 status code is binding, and no conformance check may match
+    on a message that begins "invalid body:". The messages quoted above
+    under input trimming are the app's own text and are stable. The
+    Allow header on a 405 lists the registered methods in an
+    unspecified order.
+
     A registered path does not redirect on a trailing slash. GET
     /api/me/ is a 404, not a redirect to /api/me. A redirect would let a
     caller distinguish "exists" from "does not exist" by probing paths,
-    which is the same leak the cross-tenant 404 rule closes.
+    which is the same leak the cross-tenant 404 rule closes. The rule
+    applies one level up too, at whatever mounts the API under /api: a
+    bare GET /api must reach the API's own JSON 404 rather than
+    redirecting to /api/. The Go app registers both /api and /api/ on
+    its outer mux for exactly this reason, because registering only the
+    subtree left the mux answering 301 with an HTML body.
 
-    Every response, success or error, is application/json; charset=utf-8.
-    This includes GET /api/health.
+    Every response that has a body, success or error, is
+    application/json; charset=utf-8. This includes GET /api/health and
+    every 4xx. The two responses that have no body, the 204 from POST
+    /api/logout and the 204 from DELETE /api/members/{id}, send no
+    Content-Type header at all.
 
 servers:
   - url: /api
@@ -493,6 +572,12 @@ components:
       additionalProperties: false
 
     Organization:
+      description: >
+        No route in this API returns organizations. The schema is here
+        because organization_id on every other record points at one, and
+        because contract/seed.json declares the two tenant rows for a
+        port to hardcode. Nothing in a conformance run can reach this
+        collection, so a passing seed check says nothing about it.
       type: object
       required: [id, name, created_at]
       properties:
@@ -523,8 +608,11 @@ components:
         sensitivity:
           type: string
           description: >
-            Free-form label. The seeded cast uses public, internal,
-            confidential, and restricted, but the field is not an enum.
+            Free-form label, not an enum. The app recognises public,
+            internal, confidential, and restricted, and defaults an
+            omitted value to internal, but it stores whatever it is
+            given. The seeded cast only ever uses confidential and
+            restricted.
         organization_id: {type: string}
         registered_by: {type: string, description: The id of the user who registered the resource.}
         created_at: {type: string, format: date-time}
@@ -680,3 +768,10 @@ x-ordering:
   GET /api/resources:                 [id asc]
   GET /api/resources/{id}/requests:   [created_at desc, id asc]
   GET /api/requests/{id}/comments:    [created_at asc, id asc]
+  examples:
+    description: >
+      Worked examples over contract/seed.json. Each group holds a pair
+      tied on created_at, so these two sequences fail for any port that
+      drops the id tiebreak or serves insertion order.
+    GET /api/resources/r_acme_pg/requests: [req_acme_1, req_acme_4, req_acme_5]
+    GET /api/requests/req_acme_1/comments: [c_acme_1, c_acme_2, c_acme_3]

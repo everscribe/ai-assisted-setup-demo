@@ -111,3 +111,71 @@ func TestTrailingSlashIs404NotRedirect(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.JSONEq(t, `{"error":"not found"}`, w.Body.String())
 }
+
+func TestHeadAndOptionsAre405(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	// Neither method is registered anywhere. Starlette and Express both
+	// route HEAD to the GET handler by default, so the contract pins
+	// this rather than leaving it to the framework.
+	for _, method := range []string{http.MethodHead, http.MethodOptions} {
+		w := do(t, r, method, "/api/health", "", "")
+		require.Equal(t, http.StatusMethodNotAllowed, w.Code, "%s /api/health", method)
+		require.Equal(t, "GET", w.Header().Get("Allow"))
+	}
+}
+
+func TestCheckPrecedence(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	badBody := `{"name":123,"reason":123}`
+
+	// 401 wins over the admin check and the body check.
+	w := do(t, r, http.MethodPost, "/api/resources", "", badBody)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// 403 wins over the body check. A port that binds a body model
+	// before the role check answers 400 or 422 here instead.
+	w = do(t, r, http.MethodPost, "/api/resources", "u_linus", badBody)
+	require.Equal(t, http.StatusForbidden, w.Code)
+
+	// 400 wins over the store's 404, on a route with no admin check.
+	w = do(t, r, http.MethodPost, "/api/resources/r_nope/requests", "u_linus", badBody)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	// 403 wins over the store's 404 on an admin-only route.
+	w = do(t, r, http.MethodPost, "/api/requests/req_nope/approve", "u_linus", "")
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestRequiredFieldsAreTrimmed(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	cases := []struct {
+		name, method, path, actor, body, wantErr string
+	}{
+		{"resource name", http.MethodPost, "/api/resources", "u_ada", `{"name":"  "}`, "name required"},
+		{"member name", http.MethodPost, "/api/members", "u_ada", `{"name":" ","email":"x@y.test"}`, "name and email required"},
+		{"member email", http.MethodPost, "/api/members", "u_ada", `{"name":"n","email":"  "}`, "name and email required"},
+		{"request reason", http.MethodPost, "/api/resources/r_acme_pg/requests", "u_linus", `{"reason":"  "}`, "reason required"},
+		{"comment body", http.MethodPost, "/api/requests/req_acme_1/comments", "u_linus", `{"body":"  "}`, "body required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := do(t, r, tc.method, tc.path, tc.actor, tc.body)
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.JSONEq(t, `{"error":"`+tc.wantErr+`"}`, w.Body.String())
+		})
+	}
+
+	// Login's email is matched exactly, so padding is a 401, not a login.
+	w := do(t, r, http.MethodPost, "/api/login", "", `{"email":" ada@acme.test "}`)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+
+	// The role on a role change is compared exactly too.
+	w = do(t, r, http.MethodPut, "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
