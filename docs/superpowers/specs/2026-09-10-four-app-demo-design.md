@@ -35,24 +35,30 @@ guard" below.
 | App | Backend | SDK adapter it should attract | Frontend | Component it should attract |
 |---|---|---|---|---|
 | `apps/go` | Gin | `pkg/event/adapter_gin.go` | React | `@everscribe/components-react` |
-| `apps/python` | FastAPI | `everscribe/asgi.py` | Angular | `@everscribe/components-element` |
-| `apps/node` | Express | `src/express.ts` | Vue | `@everscribe/components-element` |
+| `apps/node` | Express | `src/express.ts` | Svelte | `@everscribe/components-element` |
 | `apps/rust` | Axum | `src/axum.rs` | vanilla TS | `@everscribe/components-element` |
+| `apps/python` | FastAPI | `everscribe/asgi.py` | Vue | `@everscribe/components-element` |
 
 The right-hand columns describe what a successful instrument run should
 produce. Nothing in them ships on `main`.
 
-Two consequences worth stating plainly:
+Three consequences worth stating plainly:
 
 1. The Go app moves from stdlib `http.ServeMux` to Gin. This is a decision
    to test the most popular framework per language. It costs us coverage of
    the stdlib adapter, which is the hardest instrumentation case because
    `ServeMux` offers no middleware convention.
-2. Three of the four frontends will exercise `components-element`, the
-   framework-agnostic custom element, because no Vue or Angular wrapper
-   package exists in `everscribe/components`. Whether the agent knows how
-   to reach for the element rather than the React package is an open
-   question that this repo is designed to answer.
+2. The first three frontends mirror what the docs already publish. The
+   monorepo ships `web-components/{react,svelte,vanilla}.md` and twelve
+   example pages covering `{react,svelte,vanilla}` against all four
+   backends, so React, Svelte, and vanilla TS are the paths a customer can
+   actually follow. Testing them is testing the documented product.
+3. Vue is the deliberate stretch case: no wrapper package, no doc page, no
+   example. `everscribe/components/packages/` holds only `core`, `element`,
+   `react`, and `styles`, so Vue has nothing to reach for but the
+   framework-agnostic custom element. Whether the agent works that out
+   unaided is the most interesting question this repo can answer, and a
+   failure there is a finding rather than a defect in the demo.
 
 ## Domain
 
@@ -323,10 +329,11 @@ every agent run.
 The other three serve the build output from disk, which the
 Dockerfile stages into the runtime image.
 
-Frontend build output is not uniform. Vite (React, Vue, vanilla TS) writes
-`web/dist`. The Angular CLI writes `web/dist/<project>/browser`. The Python
-app's static path accounts for that rather than pretending the layouts
-match.
+All four frontends are Vite-based, so every one of them builds to
+`web/dist` and the four Dockerfiles stay structurally identical. This is a
+reason Angular was not chosen: the Angular CLI writes
+`web/dist/<project>/browser`, which would have made one app's static path a
+special case for no gain in what is being measured.
 
 Root `Makefile`:
 
