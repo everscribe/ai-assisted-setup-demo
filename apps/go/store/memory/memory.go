@@ -57,7 +57,7 @@ func (s *Store) ListOrganizations(ctx context.Context) ([]*models.Organization, 
 	for _, o := range s.orgs {
 		out = append(out, o)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 
@@ -108,7 +108,7 @@ func (s *Store) ListOrgMembers(ctx context.Context, orgID string) ([]*models.Use
 			out = append(out, u)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 
@@ -174,7 +174,7 @@ func (s *Store) ListOrgResources(ctx context.Context, orgID string) ([]*models.R
 			out = append(out, r)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 
@@ -242,7 +242,13 @@ func (s *Store) ListResourceRequests(ctx context.Context, orgID, resourceID stri
 			out = append(out, req)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	// newest first, id ascending on a tie
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
@@ -357,7 +363,13 @@ func (s *Store) ListRequestComments(ctx context.Context, orgID, requestID string
 			out = append(out, c)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	// oldest first, id ascending on a tie
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return out, nil
 }
 

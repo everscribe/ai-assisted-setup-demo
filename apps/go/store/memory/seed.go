@@ -14,7 +14,9 @@ func (s *Store) Seed(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now().UTC()
+	// Fixed instants, not now-relative offsets, so two independently seeded
+	// stores agree exactly and the contract can assert created_at directly.
+	now := time.Date(2026, 3, 14, 12, 0, 0, 0, time.UTC)
 	earlier := now.Add(-2 * time.Hour)
 	yesterday := now.Add(-24 * time.Hour)
 
