@@ -93,6 +93,10 @@ Eighteen registrations per app, identical paths and methods across all four.
 | Comments | `POST /api/requests/{id}/comments` |
 | Health | `GET /api/health` |
 
+An unknown `/api/*` path returns 404 with an empty body. This is pinned in
+the contract because the four frameworks disagree by default: Gin returns
+404 with an empty body, Express returns an HTML error page.
+
 Auth is deliberately minimal: the SPA posts an email to `/api/login`, then
 attaches `X-User-ID` on every subsequent request. Real apps use sessions or
 JWTs. The agent should work with either shape, and the simpler one keeps the
@@ -103,14 +107,17 @@ four ports honest.
 ```
 ai-assisted-setup-demo/
   apps/
-    go/       go.mod, main.go, handlers/, store/, store/memory/, models/, web/
-    python/   pyproject.toml, app/, web/
-    node/     package.json, src/, web/
-    rust/     Cargo.toml, src/, web/
+    go/       go.mod, main.go, handlers/, store/, store/memory/, models/,
+              web/, Dockerfile, README.md
+    python/   pyproject.toml, app/, web/, Dockerfile, README.md
+    node/     package.json, src/, web/, Dockerfile, README.md
+    rust/     Cargo.toml, src/, web/, Dockerfile, README.md
   contract/
     openapi.yaml
     seed.json
     conformance/     go.mod, the runner
+  docs/superpowers/specs/
+  .github/workflows/ci.yml
   docker-compose.yml
   Makefile
   README.md
@@ -121,7 +128,8 @@ reference to anything outside that directory, because that is what we point
 the hosted instrument flow at.
 
 Ports are fixed and distinct so all four run at once: Go 9001, Python 9002,
-Node 9003, Rust 9004.
+Node 9003, Rust 9004. Each server reads `PORT` and falls back to its default,
+as today's `main.go` already does, since compose sets it.
 
 ### The Go module moves
 
@@ -130,9 +138,14 @@ Today `go.mod` sits at the repo root with module path
 with module path `github.com/everscribe/ai-assisted-setup-demo/apps/go`, and
 the repo root carries no `go.mod`.
 
+The `go` directive moves from 1.22 to 1.25, matching `sdk-go`'s minimum.
+Below that, an agent that adds the SDK gets a toolchain resolution error
+rather than an instrumented app, which would read as a skill failure when it
+is a repo defect.
+
 Every import inside the Go app changes. This is mechanical, but it touches
-every file and it strands the nine existing `everscribe/setup-*` branches,
-which are disposable agent output.
+every file and it strands the existing `everscribe/setup-*` branches (13 at
+time of writing), which are disposable agent output.
 
 ## Store abstraction
 
@@ -166,8 +179,26 @@ type Store interface {
 }
 ```
 
-Translation across the four: Go `interface`, Python `Protocol`, TypeScript
-`interface`, Rust `trait Store: Send + Sync` held as `Arc<dyn Store>`.
+Translation across the four is two separate things, and conflating them is
+the mistake to avoid. The store interface translates directly. The *context*
+does not: only Go threads it as a parameter, and the other three SDKs use an
+ambient mechanism that an implementer must not fake with an invented `ctx`
+argument.
+
+| App | Store interface | How the SDK actually threads context |
+|---|---|---|
+| Go | `interface` | `context.Context` as first argument |
+| Python | `Protocol` | `contextvars`, set by the ASGI middleware (`everscribe/event/context.py`) |
+| Node | `interface` | `AsyncLocalStorage` |
+| Rust | `#[async_trait] trait Store: Send + Sync`, held as `Arc<dyn Store>` | request extensions (`sdk-rust/src/event/context.rs`) |
+
+So the Go app plumbs `ctx` explicitly; the other three plumb the framework's
+own request-scoped carrier (FastAPI's request, Express's `req`, axum's
+`Extension`) and let the ambient mechanism do the rest.
+
+Rust needs `#[async_trait]`. An `async fn` in a plain trait is not
+dyn-compatible, so `Arc<dyn Store>` will not compile without it or a
+hand-rolled `Pin<Box<dyn Future>>`.
 
 ### What the interface deliberately does not do
 
@@ -189,7 +220,14 @@ routes: request bodies, response shapes, status codes.
 `contract/seed.json` declares the expected seeded state: two organizations,
 four users (two admins, two members), five resources, and access requests
 spanning all four states, with fixed IDs so the frontends' quick-pick login
-is stable.
+is stable, and with fixed absolute timestamps.
+
+Absolute matters. Today's `store/seed.go` builds every timestamp from
+`time.Now()` offsets, which would leave the harness unable to assert seeded
+`created_at` values at all: a hole at exactly the field most likely to
+differ across ports. Pinning them also makes seeded ordering deterministic,
+so only rows created during a run need the tiebreak described under
+Normalization.
 
 **Seed data is duplicated on purpose.** Each app hardcodes its own seed
 idiomatically, the way `store/seed.go` does today, rather than reading
@@ -204,8 +242,10 @@ Written in Go, in `contract/conformance/` with its own `go.mod`. It is a
 pure HTTP client with no handlers of its own, so it should be invisible to
 the instrument agent.
 
-`make verify` brings all four apps up via compose, runs the harness against
-them, and tears them down.
+`make verify` brings up whichever apps are present in `docker-compose.yml`,
+runs the harness against them, and tears them down. Cross-app equality is
+skipped when fewer than two apps are up, which is the state Plans 1 and 2
+leave the repo in.
 
 Three layers of assertion:
 
@@ -215,14 +255,23 @@ Three layers of assertion:
 2. **Cross-app equality.** One scripted sequence of roughly twenty requests
    covering the full lifecycle (login, list resources, request access,
    comment, approve, revoke) is replayed against all four apps. Normalized
-   responses must match across all four. There is deliberately no reference
-   implementation: the four are compared to each other, not to Go, so Go's
-   bugs never become the spec.
+   responses must match across all four. The comparison is symmetric: the
+   four are compared to each other rather than to a designated reference, so
+   no app's runtime output is privileged and a single app's drift is caught
+   wherever it appears.
+
+   Go does still shape the contract, since `openapi.yaml` is written from
+   the Go app's behaviour and the three ports are written by reading Go. The
+   equality layer catches divergence between apps; it cannot catch a mistake
+   the contract itself encodes. Layers 1 and 3 are the defence against
+   that.
 3. **Security invariants**, asserted explicitly rather than by comparison,
    because these must be right rather than merely consistent:
    - cross-tenant reads return 404
    - member writes to admin-only routes return 403
-   - a missing `X-User-ID` returns 401
+   - a missing `X-User-ID` returns 401 on every route except
+     `POST /api/login` and `GET /api/health`, which are anonymous by
+     design
    - a denied request cannot transition to approved
 
 ### Normalization
@@ -231,6 +280,20 @@ Generated IDs and timestamps differ per app and per run, so cross-app
 comparison needs normalization: generated IDs rewritten to `$id1`, `$id2`
 in order of first appearance, timestamps replaced by a placeholder once
 checked for plausible ordering.
+
+Ordering is the other half, and it is where cross-language comparison
+actually breaks. Every list endpoint declares a total order in
+`openapi.yaml`: the domain sort key, then `id` ascending as tiebreak.
+
+Without the tiebreak, equal timestamps order arbitrarily, and Go diverges
+from the other three by construction: `sort.Slice` is unstable, while
+JavaScript's `Array.prototype.sort`, Python's `sorted`, and Rust's `sort_by`
+are all stable. Today's `store.go:265` sorts `CreatedAt` descending and
+`store.go:381` ascending, neither with a tiebreak, over 6-byte random hex
+IDs. Ties are likely rather than theoretical: the conformance sequence posts
+comments back to back, and JavaScript's `Date.now()` has millisecond
+resolution. Apps use a stable sort (`sort.SliceStable` in Go) as belt and
+braces.
 
 The normalizer is the one piece of real logic in the harness and the one
 place where a bug would produce false confidence. It gets its own unit
@@ -250,7 +313,14 @@ runtime) and a short README.
 
 **Serving the SPA.** Every server serves its built frontend itself, so one
 process on one port is the whole app. Go keeps `go:embed` on `web/dist` as
-it does today; the other three serve the build output from disk, which the
+it does today, including the checked-in `web/dist/index.html` placeholder
+that lets `go build` succeed before the SPA is ever built. The `.gitignore`
+negation that preserves it moves with the app; if the paths are rewritten to
+`apps/go/web/dist/*` without the matching `!apps/go/web/dist/index.html`,
+`apps/go` stops compiling on a fresh clone, which breaks the harness and
+every agent run.
+
+The other three serve the build output from disk, which the
 Dockerfile stages into the runtime image.
 
 Frontend build output is not uniform. Vite (React, Vue, vanilla TS) writes
@@ -274,11 +344,41 @@ language toolchains, which matters if the repo is ever handed to a prospect.
 
 ## The clean guard
 
-`make check-clean` greps the four dependency manifests and the four frontend
-`package.json` files for anything matching `everscribe`, and fails on a hit.
-It runs in CI on `main`.
+`make check-clean` fails if an Everscribe *dependency* appears in any
+manifest or lockfile. It matches exact dependency identifiers, never a bare
+`everscribe`, because the Go module path is `github.com/everscribe/...` and a
+fuzzy grep would fail on a clean `main` forever.
 
-About six lines of shell, and it makes the repo's core invariant mechanical.
+| Ecosystem | Banned identifier |
+|---|---|
+| Go | `github.com/everscribe/sdk-go` in `go.mod`, `go.sum` |
+| Node | `@everscribe/sdk-node` in `package.json`, lockfile |
+| Frontends | `@everscribe/components-` (matches core, element, react, styles) |
+| Python | a bare `everscribe` in `pyproject.toml` dependencies |
+| Rust | a bare `everscribe` under `[dependencies]` in `Cargo.toml` |
+
+```make
+check-clean:
+	@! grep -rnE 'everscribe/sdk-go|@everscribe/(sdk-node|components-)' \
+		apps/*/go.mod apps/*/go.sum apps/*/package.json apps/*/package-lock.json \
+		apps/*/web/package.json apps/*/web/package-lock.json \
+		apps/*/Cargo.toml apps/*/Cargo.lock apps/*/pyproject.toml apps/*/uv.lock \
+		|| { echo "everscribe dependency on main"; exit 1; }
+	@! grep -nE '^\s*everscribe\s*[=~<>"]' apps/rust/Cargo.toml apps/python/pyproject.toml \
+		|| { echo "everscribe dependency on main"; exit 1; }
+	@! grep -rn 'components-element' apps/*/web/index.html apps/*/web/src \
+		|| { echo "everscribe component loaded outside a manifest"; exit 1; }
+```
+
+Lockfiles are in scope. So is a CDN `<script src=...components-element...>`
+tag, which bypasses every manifest and is the one way to instrument a
+frontend without touching a dependency file.
+
+It runs in CI on `main`, in a workflow this repo does not have yet. See
+Plan 1.
+
+About a dozen lines of shell, and it makes the repo's core invariant
+mechanical.
 Without it the failure mode is silent: a stray dependency merges to `main`,
 and from then on every instrument test starts from a contaminated baseline
 with nobody aware of it.
@@ -292,7 +392,8 @@ each independently landable and each leaving the repo in a working state:
 port it from stdlib to Gin, introduce the `Store` interface and
 `store/memory`, plumb context. Write `contract/openapi.yaml` and
 `contract/seed.json` from the resulting behaviour. Add the root `Makefile`,
-compose file, and `make check-clean`. At the end, one app works and the
+compose file, `make check-clean`, and `.github/workflows/ci.yml` running it.
+At the end, one app works and the
 contract is written down.
 
 **Plan 2: conformance harness.** Build the runner and the normalizer against
@@ -318,6 +419,10 @@ thing we ultimately want to learn from an n>1 test. It is deliberately not
 built now: designing it against events that do not exist yet would be
 guessing.
 
+When it is built, note that `contract/conformance/go.mod` will then require
+`sdk-go`. The clean guard scopes to `apps/` deliberately, so this is already
+fine; do not widen it to the repo root in response.
+
 **A second app per language.** Full adapter coverage per language would mean
 eight backends. The mainstream framework per language covers the common case,
 which is the case that matters at launch. Revisit if the skill proves solid
@@ -330,6 +435,7 @@ on the common path.
 - The git remote still points at `github.com/everscribe/ai-setup-example.git`
   while the module and directory are `ai-assisted-setup-demo`. GitHub
   redirects, so it works, but the remote should be updated.
-- The nine `everscribe/setup-*` branches predate this restructure and will
+- The `everscribe/setup-*` branches (13 at time of writing) predate this
+  restructure and will
   not merge cleanly afterwards. They are disposable agent output; delete
   them when the restructure lands.
