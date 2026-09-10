@@ -49,11 +49,12 @@ Three consequences worth stating plainly:
    to test the most popular framework per language. It costs us coverage of
    the stdlib adapter, which is the hardest instrumentation case because
    `ServeMux` offers no middleware convention.
-2. The first three frontends mirror what the docs already publish. The
-   monorepo ships `web-components/{react,svelte,vanilla}.md` and twelve
-   example pages covering `{react,svelte,vanilla}` against all four
-   backends, so React, Svelte, and vanilla TS are the paths a customer can
-   actually follow. Testing them is testing the documented product.
+2. The first three frontends mirror what the docs already publish. Under
+   `monorepo/internal/ui/content/docs/`, the `web-components/` directory
+   ships `react.md`, `svelte.md`, and `vanilla.md`, and `examples/` ships
+   twelve pages covering those three against all four backends. React,
+   Svelte, and vanilla TS are the paths a customer can actually follow, so
+   testing them is testing the documented product.
 3. Vue is the deliberate stretch case: no wrapper package, no doc page, no
    example. `everscribe/components/packages/` holds only `core`, `element`,
    `react`, and `styles`, so Vue has nothing to reach for but the
@@ -352,9 +353,10 @@ reason Angular was not chosen: the Angular CLI writes
 special case for no gain in what is being measured.
 
 Svelte here means Svelte 4 plus Vite, not SvelteKit, matching what
-`docs/examples/svelte-node.md` publishes. SvelteKit with `adapter-static`
-writes `build/` rather than `web/dist`, which would reintroduce exactly the
-per-app static path this uniformity exists to avoid.
+`monorepo/internal/ui/content/docs/examples/svelte-node.md` publishes.
+SvelteKit with `adapter-static` writes `build/` rather than `web/dist`,
+which would reintroduce exactly the per-app static path this uniformity
+exists to avoid.
 
 Root `Makefile`:
 
