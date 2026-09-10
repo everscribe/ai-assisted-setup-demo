@@ -1,24 +1,15 @@
-PORT ?= 9001
+.PHONY: up down verify check-clean dev-go
 
-.PHONY: dev web-install web-build server build run clean
+up:
+	docker compose up --build -d
 
-# Full local dev: install web deps once, build the SPA, run the Go server
-# which serves the SPA from web/dist via embed.FS.
-dev: web-install web-build run
+down:
+	docker compose down
 
-web-install:
-	cd web && npm install
+# Plan 2 replaces this with the conformance harness.
+verify:
+	@echo "conformance harness lands in plan 2"
 
-web-build:
-	cd web && npm run build
-
-server:
-	go build -o bin/server .
-
-build: web-build server
-
-run: web-build
-	PORT=$(PORT) go run .
-
-clean:
-	rm -rf bin web/dist web/node_modules
+dev-go:
+	cd apps/go/web && pnpm install && pnpm run build
+	cd apps/go && PORT=9001 go run .

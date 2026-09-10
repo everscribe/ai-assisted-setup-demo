@@ -4,10 +4,11 @@
 # so the frontend has to be built before the Go binary.
 FROM node:20-alpine AS web
 WORKDIR /app/web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build
+RUN pnpm run build
 
 # Stage 2: build the static Go server with the SPA embedded.
 FROM golang:1.25-alpine AS build
