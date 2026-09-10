@@ -90,6 +90,10 @@ paths:
   /me:
     get:
       summary: Get the current user
+      description: >
+        Only ever 200 or 401. The handler looks up the actor once, in
+        requireActor, and returns that same user back; there is no
+        second lookup that could miss and produce a 404.
       responses:
         '200':
           description: The authenticated user.
@@ -98,8 +102,6 @@ paths:
               schema: {$ref: '#/components/schemas/User'}
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '405':
           $ref: '#/components/responses/MethodNotAllowed'
 
