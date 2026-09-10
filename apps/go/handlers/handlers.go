@@ -76,6 +76,18 @@ func Router(s store.Store) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
+	// A trailing slash or a near-miss path must not redirect. A redirect
+	// is a usable oracle for "this path exists"; falling through to the
+	// same 404 as an unknown path is not.
+	r.RedirectTrailingSlash = false
+	r.RedirectFixedPath = false
+
+	// A path that exists under a different method is a 405, not a 404.
+	r.HandleMethodNotAllowed = true
+	r.NoMethod(func(c *gin.Context) {
+		fail(c, http.StatusMethodNotAllowed, "method not allowed")
+	})
+
 	// An unknown /api/* path returns the same JSON 404 as a cross-tenant
 	// miss. The two are told apart by the request path, not the response.
 	r.NoRoute(func(c *gin.Context) {

@@ -2,7 +2,7 @@
 //
 // Auth model: after POST /api/login, the returned user's id is stashed
 // in localStorage and sent as X-User-ID on every subsequent request.
-// The Go backend's actorFromRequest() reads that header to identify the
+// The Go backend's requireActor() reads that header to identify the
 // caller. Real apps would use sessions/JWTs; the auto-instrument agent
 // works with either shape, so we keep the demo minimal.
 

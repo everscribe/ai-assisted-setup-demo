@@ -88,3 +88,26 @@ func TestAnonymousRoutes(t *testing.T) {
 	require.Equal(t, http.StatusOK,
 		do(t, r, http.MethodPost, "/api/login", "", `{"email":"ada@acme.test"}`).Code)
 }
+
+func TestMethodMismatchIs405(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	// /api/login exists as POST; GET on the same path is a method
+	// mismatch, not a missing route.
+	w := do(t, r, http.MethodGet, "/api/login", "", "")
+	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	require.JSONEq(t, `{"error":"method not allowed"}`, w.Body.String())
+}
+
+func TestTrailingSlashIs404NotRedirect(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	// A registered path with a trailing slash must not redirect - that
+	// would leak which paths exist. It falls through to the same 404 as
+	// an unknown path.
+	w := do(t, r, http.MethodGet, "/api/me/", "u_ada", "")
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.JSONEq(t, `{"error":"not found"}`, w.Body.String())
+}

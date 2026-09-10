@@ -34,7 +34,7 @@ func ListResourceRequests(s store.Store) gin.HandlerFunc {
 // POST /api/resources/{id}/requests   {"reason"} → AccessRequest
 func RequestAccess(s store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		u, ok := requireActor(c, s)
+		me, ok := requireActor(c, s)
 		if !ok {
 			return
 		}
@@ -50,7 +50,7 @@ func RequestAccess(s store.Store) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "reason required")
 			return
 		}
-		req, err := s.RequestAccess(c.Request.Context(), u.OrganizationID, c.Param("id"), u.ID, in.Reason)
+		req, err := s.RequestAccess(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID, in.Reason)
 		if err != nil {
 			failStore(c, err)
 			return
