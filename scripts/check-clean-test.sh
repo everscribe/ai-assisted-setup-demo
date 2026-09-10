@@ -37,6 +37,8 @@ run "github shorthand"  'echo "{\"dependencies\":{\"trail\":\"github:everscribe/
 run "pep508 git url"    'printf "[project]\ndependencies = [\n    \"audit-sdk @ git+https://github.com/everscribe/sdk-python.git\",\n]\n" > apps/python/pyproject.toml'
 run "npm alias"         'echo "{\"dependencies\":{\"sdk-node\":\"npm:@everscribe/sdk-node@1\"}}" > apps/node/package.json'
 run "lockfile-only dep" 'echo "{\"dependencies\":{\"left-pad\":\"^1.0.0\"}}" > apps/node/package.json; echo "  '\''@everscribe/sdk-node'\'':" > apps/node/pnpm-lock.yaml'
+run "allowlist bypass in go.mod"  'echo "require github.com/everscribe/sdk-go v0.1.0 // see github.com/everscribe/ai-assisted-setup-demo/apps/go" >> apps/go/go.mod'
+run "allowlist bypass in json"    'echo "{\"dependencies\":{\"@everscribe/sdk-node\":\"^0.1.0\"},\"_n\":\"github.com/everscribe/ai-assisted-setup-demo\"}" > apps/node/package.json'
 
 D=$(mktemp -d); cp "$MAKEFILE" "$D/Makefile"
 ( cd "$D"; mkdir -p apps/go
