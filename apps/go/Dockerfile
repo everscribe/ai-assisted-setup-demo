@@ -2,7 +2,7 @@
 
 # Stage 1: build the SPA. The Go server embeds web/dist via go:embed,
 # so the frontend has to be built before the Go binary.
-FROM node:20-alpine AS web
+FROM node:22-alpine AS web
 WORKDIR /app/web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
