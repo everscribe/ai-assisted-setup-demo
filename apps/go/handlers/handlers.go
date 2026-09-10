@@ -21,12 +21,12 @@ import (
 // actorFromRequest looks up the user identified by the X-User-ID header.
 // Returns (user, true) on hit; (nil, false) if the header is missing or
 // the id doesn't resolve. Handlers should return 401 on the false case.
-func actorFromRequest(r *http.Request, s *store.Store) (*models.User, bool) {
+func actorFromRequest(r *http.Request, s store.Store) (*models.User, bool) {
 	id := r.Header.Get("X-User-ID")
 	if id == "" {
 		return nil, false
 	}
-	u, err := s.GetUser(id)
+	u, err := s.GetUser(r.Context(), id)
 	if err != nil {
 		return nil, false
 	}

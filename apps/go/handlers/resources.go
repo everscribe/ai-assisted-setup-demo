@@ -13,14 +13,19 @@ import (
 // hiding so historical context stays visible).
 //
 // GET /api/resources → []Resource
-func ListResources(s *store.Store) http.HandlerFunc {
+func ListResources(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		writeJSON(w, http.StatusOK, s.ListOrgResources(me.OrganizationID))
+		resources, err := s.ListOrgResources(r.Context(), me.OrganizationID)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, resources)
 	}
 }
 
@@ -29,7 +34,7 @@ func ListResources(s *store.Store) http.HandlerFunc {
 // which is privileged.
 //
 // POST /api/resources   {"name", "description", "sensitivity"} → Resource
-func RegisterResource(s *store.Store) http.HandlerFunc {
+func RegisterResource(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -57,7 +62,7 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 		if in.Sensitivity == "" {
 			in.Sensitivity = models.SensitivityInternal
 		}
-		r2, err := s.RegisterResource(me.OrganizationID, in.Name, in.Description, in.Sensitivity, me.ID)
+		r2, err := s.RegisterResource(r.Context(), me.OrganizationID, in.Name, in.Description, in.Sensitivity, me.ID)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -71,7 +76,7 @@ func RegisterResource(s *store.Store) http.HandlerFunc {
 // is intact) but RequestAccess refuses new ones. Admin only.
 //
 // POST /api/resources/{id}/decommission → Resource
-func DecommissionResource(s *store.Store) http.HandlerFunc {
+func DecommissionResource(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -81,7 +86,7 @@ func DecommissionResource(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		res, err := s.DecommissionResource(me.OrganizationID, r.PathValue("id"))
+		res, err := s.DecommissionResource(r.Context(), me.OrganizationID, r.PathValue("id"))
 		if err != nil {
 			httpError(w, err)
 			return

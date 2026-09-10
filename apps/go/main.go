@@ -19,6 +19,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"log"
@@ -26,7 +27,7 @@ import (
 	"os"
 
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/handlers"
-	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
+	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store/memory"
 )
 
 //go:embed all:web/dist
@@ -38,8 +39,10 @@ func main() {
 		port = "9001"
 	}
 
-	st := store.New()
-	st.Seed()
+	st := memory.New()
+	if err := st.Seed(context.Background()); err != nil {
+		log.Fatalf("seed: %v", err)
+	}
 
 	api := http.NewServeMux()
 

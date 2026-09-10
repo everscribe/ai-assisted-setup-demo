@@ -11,21 +11,26 @@ import (
 // ListMembers returns every user in the caller's organization.
 //
 // GET /api/members → []User
-func ListMembers(s *store.Store) http.HandlerFunc {
+func ListMembers(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		writeJSON(w, http.StatusOK, s.ListOrgMembers(me.OrganizationID))
+		members, err := s.ListOrgMembers(r.Context(), me.OrganizationID)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, members)
 	}
 }
 
 // InviteMember adds a new user to the caller's organization. Admin only.
 //
 // POST /api/members   {"name", "email", "role"} → User
-func InviteMember(s *store.Store) http.HandlerFunc {
+func InviteMember(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -52,7 +57,7 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 		if in.Role != models.RoleAdmin && in.Role != models.RoleMember {
 			in.Role = models.RoleMember
 		}
-		u, err := s.InviteMember(me.OrganizationID, in.Name, in.Email, in.Role)
+		u, err := s.InviteMember(r.Context(), me.OrganizationID, in.Name, in.Email, in.Role)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -64,7 +69,7 @@ func InviteMember(s *store.Store) http.HandlerFunc {
 // RemoveMember deletes a user from the caller's organization. Admin only.
 //
 // DELETE /api/members/{id} → 204
-func RemoveMember(s *store.Store) http.HandlerFunc {
+func RemoveMember(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -74,7 +79,7 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		if err := s.RemoveMember(me.OrganizationID, r.PathValue("id")); err != nil {
+		if err := s.RemoveMember(r.Context(), me.OrganizationID, r.PathValue("id")); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -86,7 +91,7 @@ func RemoveMember(s *store.Store) http.HandlerFunc {
 // only.
 //
 // PUT /api/members/{id}/role   {"role": "admin"} → User
-func ChangeMemberRole(s *store.Store) http.HandlerFunc {
+func ChangeMemberRole(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -106,7 +111,7 @@ func ChangeMemberRole(s *store.Store) http.HandlerFunc {
 			http.Error(w, "role must be admin or member", http.StatusBadRequest)
 			return
 		}
-		u, err := s.UpdateMemberRole(me.OrganizationID, r.PathValue("id"), in.Role)
+		u, err := s.UpdateMemberRole(r.Context(), me.OrganizationID, r.PathValue("id"), in.Role)
 		if err != nil {
 			httpError(w, err)
 			return

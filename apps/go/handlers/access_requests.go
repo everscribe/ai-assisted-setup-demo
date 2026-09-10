@@ -11,14 +11,14 @@ import (
 // newest first. Workspace-scoped via the store.
 //
 // GET /api/resources/{id}/requests → []AccessRequest
-func ListResourceRequests(s *store.Store) http.HandlerFunc {
+func ListResourceRequests(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		reqs, err := s.ListResourceRequests(me.OrganizationID, r.PathValue("id"))
+		reqs, err := s.ListResourceRequests(r.Context(), me.OrganizationID, r.PathValue("id"))
 		if err != nil {
 			httpError(w, err)
 			return
@@ -31,7 +31,7 @@ func ListResourceRequests(s *store.Store) http.HandlerFunc {
 // Anyone in the organization can request - approval is gated separately.
 //
 // POST /api/resources/{id}/requests   {"reason"} → AccessRequest
-func RequestAccess(s *store.Store) http.HandlerFunc {
+func RequestAccess(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -49,7 +49,7 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 			http.Error(w, "reason required", http.StatusBadRequest)
 			return
 		}
-		req, err := s.RequestAccess(me.OrganizationID, r.PathValue("id"), me.ID, in.Reason)
+		req, err := s.RequestAccess(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID, in.Reason)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -62,7 +62,7 @@ func RequestAccess(s *store.Store) http.HandlerFunc {
 // the privileged decision in this domain.
 //
 // POST /api/requests/{id}/approve → AccessRequest
-func ApproveRequest(s *store.Store) http.HandlerFunc {
+func ApproveRequest(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -72,7 +72,7 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		req, err := s.ApproveRequest(me.OrganizationID, r.PathValue("id"), me.ID)
+		req, err := s.ApproveRequest(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -85,7 +85,7 @@ func ApproveRequest(s *store.Store) http.HandlerFunc {
 // the requester would need to file a fresh request to try again.
 //
 // POST /api/requests/{id}/deny → AccessRequest
-func DenyRequest(s *store.Store) http.HandlerFunc {
+func DenyRequest(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -95,7 +95,7 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		req, err := s.DenyRequest(me.OrganizationID, r.PathValue("id"), me.ID)
+		req, err := s.DenyRequest(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -109,7 +109,7 @@ func DenyRequest(s *store.Store) http.HandlerFunc {
 // them back out." Audit-critical: who revoked, when, why.
 //
 // POST /api/requests/{id}/revoke → AccessRequest
-func RevokeRequest(s *store.Store) http.HandlerFunc {
+func RevokeRequest(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -119,7 +119,7 @@ func RevokeRequest(s *store.Store) http.HandlerFunc {
 		if !requireAdmin(w, me) {
 			return
 		}
-		req, err := s.RevokeRequest(me.OrganizationID, r.PathValue("id"), me.ID)
+		req, err := s.RevokeRequest(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -131,14 +131,14 @@ func RevokeRequest(s *store.Store) http.HandlerFunc {
 // ListRequestComments returns every comment on an access request.
 //
 // GET /api/requests/{id}/comments → []Comment
-func ListRequestComments(s *store.Store) http.HandlerFunc {
+func ListRequestComments(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		comments, err := s.ListRequestComments(me.OrganizationID, r.PathValue("id"))
+		comments, err := s.ListRequestComments(r.Context(), me.OrganizationID, r.PathValue("id"))
 		if err != nil {
 			httpError(w, err)
 			return
@@ -152,7 +152,7 @@ func ListRequestComments(s *store.Store) http.HandlerFunc {
 // and by requesters to add follow-up info.
 //
 // POST /api/requests/{id}/comments   {"body"} → Comment
-func AddComment(s *store.Store) http.HandlerFunc {
+func AddComment(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		me, ok := actorFromRequest(r, s)
 		if !ok {
@@ -170,7 +170,7 @@ func AddComment(s *store.Store) http.HandlerFunc {
 			http.Error(w, "body required", http.StatusBadRequest)
 			return
 		}
-		c, err := s.AddComment(me.OrganizationID, r.PathValue("id"), me.ID, in.Body)
+		c, err := s.AddComment(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID, in.Body)
 		if err != nil {
 			httpError(w, err)
 			return

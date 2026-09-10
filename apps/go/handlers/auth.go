@@ -12,7 +12,7 @@ import (
 // X-User-ID on every subsequent request.
 //
 // POST /api/login   {"email": "ada@acme.test"} → User
-func Login(s *store.Store) http.HandlerFunc {
+func Login(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Email string `json:"email"`
@@ -24,7 +24,7 @@ func Login(s *store.Store) http.HandlerFunc {
 			http.Error(w, "email required", http.StatusBadRequest)
 			return
 		}
-		u, err := s.FindUserByEmail(in.Email)
+		u, err := s.FindUserByEmail(r.Context(), in.Email)
 		if err != nil {
 			http.Error(w, "no user with that email", http.StatusUnauthorized)
 			return
@@ -38,7 +38,7 @@ func Login(s *store.Store) http.HandlerFunc {
 // also the kind of auditable event a real auth system records.
 //
 // POST /api/logout → 204
-func Logout(s *store.Store) http.HandlerFunc {
+func Logout(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, ok := actorFromRequest(r, s)
 		if !ok {
@@ -53,7 +53,7 @@ func Logout(s *store.Store) http.HandlerFunc {
 // load to rehydrate its session from localStorage.
 //
 // GET /api/me → User
-func Me(s *store.Store) http.HandlerFunc {
+func Me(s store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, ok := actorFromRequest(r, s)
 		if !ok {

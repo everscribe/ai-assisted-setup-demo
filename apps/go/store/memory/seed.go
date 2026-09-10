@@ -1,17 +1,16 @@
-package store
+package memory
 
 import (
+	"context"
 	"time"
 
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
 )
 
-// Seed populates the store with two organizations, four users (two
-// admins, two members), a handful of resources, and a mix of access
-// requests in every state. Called once on server start so the demo has
-// realistic content immediately. The IDs are fixed so the frontend's
-// quick-pick login is stable across restarts.
-func (s *Store) Seed() {
+// Seed populates the store with two organizations, four seeded users,
+// a handful of resources, and access requests in every state. IDs are
+// fixed so the frontend's quick-pick login is stable across restarts.
+func (s *Store) Seed(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -94,4 +93,6 @@ func (s *Store) Seed() {
 		s.requests[req.ID] = req
 		s.requestsByRes[req.ResourceID] = append(s.requestsByRes[req.ResourceID], req.ID)
 	}
+
+	return nil
 }
