@@ -21,10 +21,13 @@ check-clean:
 	         apps/*/web/package.json apps/*/web/pnpm-lock.yaml \
 	         apps/*/web/package-lock.json apps/*/web/yarn.lock \
 	         apps/*/Cargo.toml apps/*/Cargo.lock apps/*/pyproject.toml apps/*/uv.lock \
+	         apps/*/requirements.txt apps/*/requirements-dev.txt \
+	         apps/*/Pipfile apps/*/Pipfile.lock apps/*/poetry.lock \
+	         apps/*/setup.py apps/*/setup.cfg \
 	         apps/*/web/index.html apps/*/web/dist/index.html; do \
 	  [ -f "$$f" ] && files="$$files $$f"; \
 	done; \
-	hits=""; [ -n "$$files" ] && hits=$$(grep -nE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=' $$files 2>/dev/null); \
+	hits=""; [ -n "$$files" ] && hits=$$(grep -nE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=|everscribe/|^[[:space:]]*everscribe[[:space:]]*[<>=!~]' $$files 2>/dev/null | grep -vF 'github.com/everscribe/ai-assisted-setup-demo'); \
 	src=$$(grep -rnE '@everscribe/components-' apps/*/web/src 2>/dev/null); \
 	if [ -n "$$hits$$src" ]; then \
 	  echo "everscribe dependency on main:"; echo "$$hits"; echo "$$src"; exit 1; \

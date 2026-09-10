@@ -32,6 +32,11 @@ run "pyproject.toml"    'printf "[project]\ndependencies = [\n    \"everscribe>=
 run "uv.lock"           'printf "[[package]]\nname = \"everscribe\"\n" > apps/python/uv.lock'
 run "Cargo.toml"        'printf "[dependencies]\neverscribe = \"0.1\"\n" > apps/rust/Cargo.toml'
 run "Cargo.lock"        'printf "[[package]]\nname = \"everscribe\"\n" > apps/rust/Cargo.lock'
+run "requirements.txt"  'printf "everscribe>=0.1\n" > apps/python/requirements.txt'
+run "github shorthand"  'echo "{\"dependencies\":{\"trail\":\"github:everscribe/components-react\"}}" > apps/node/package.json'
+run "pep508 git url"    'printf "[project]\ndependencies = [\n    \"audit-sdk @ git+https://github.com/everscribe/sdk-python.git\",\n]\n" > apps/python/pyproject.toml'
+run "npm alias"         'echo "{\"dependencies\":{\"sdk-node\":\"npm:@everscribe/sdk-node@1\"}}" > apps/node/package.json'
+run "lockfile-only dep" 'echo "{\"dependencies\":{\"left-pad\":\"^1.0.0\"}}" > apps/node/package.json; echo "  '\''@everscribe/sdk-node'\'':" > apps/node/pnpm-lock.yaml'
 
 D=$(mktemp -d); cp "$MAKEFILE" "$D/Makefile"
 ( cd "$D"; mkdir -p apps/go
