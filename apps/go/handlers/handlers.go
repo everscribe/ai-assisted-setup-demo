@@ -1,76 +1,114 @@
-// Package handlers exposes the HTTP handlers for the demo. Each file
-// groups one resource: auth, members, boards, tasks. Handlers depend on
-// a *store.Store and reach the authenticated user via actorFromRequest,
-// which reads the X-User-ID header set by the SPA's login.
+// Package handlers exposes the HTTP handlers for the demo, one file per
+// resource: auth, members, resources, requests, comments. Handlers depend
+// on the store.Store interface and reach the authenticated user via
+// requireActor, which reads the X-User-ID header set by the SPA's login.
 //
-// All mutating routes are workspace-scoped: the store enforces that
-// resources live in the actor's workspace, returning ErrNotFound on
-// cross-workspace access. Handlers translate ErrNotFound → 404 and
-// ErrForbidden → 403.
+// Every error response is JSON via fail/failStore. Mutating routes are
+// organization-scoped: the store enforces that resources live in the
+// actor's organization, returning ErrNotFound on cross-tenant access.
 package handlers
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
-// actorFromRequest looks up the user identified by the X-User-ID header.
-// Returns (user, true) on hit; (nil, false) if the header is missing or
-// the id doesn't resolve. Handlers should return 401 on the false case.
-func actorFromRequest(r *http.Request, s store.Store) (*models.User, bool) {
-	id := r.Header.Get("X-User-ID")
+// fail writes a JSON error body. Every error response in this app is
+// JSON; the contract depends on it and http.Error writes plain text.
+func fail(c *gin.Context, status int, msg string) {
+	c.AbortWithStatusJSON(status, gin.H{"error": msg})
+}
+
+// failStore maps a store error to its status. ErrNotFound covers both a
+// missing row and a cross-tenant miss, on purpose.
+func failStore(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		fail(c, http.StatusNotFound, "not found")
+	case errors.Is(err, store.ErrForbidden):
+		fail(c, http.StatusForbidden, "forbidden")
+	case errors.Is(err, store.ErrConflict):
+		fail(c, http.StatusConflict, "conflict")
+	default:
+		fail(c, http.StatusInternalServerError, err.Error())
+	}
+}
+
+// actor resolves X-User-ID. Handlers call requireActor instead.
+func actor(c *gin.Context, s store.Store) (*models.User, bool) {
+	id := c.GetHeader("X-User-ID")
 	if id == "" {
 		return nil, false
 	}
-	u, err := s.GetUser(r.Context(), id)
+	u, err := s.GetUser(c.Request.Context(), id)
 	if err != nil {
 		return nil, false
 	}
 	return u, true
 }
 
-// writeJSON serializes v as JSON with the given status. Convenience to
-// keep the body of every handler short.
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-// httpError surfaces a store error as an HTTP response. ErrNotFound → 404,
-// ErrForbidden → 403, anything else → 500. The body is the plain error
-// message - enough for the SPA's error banner.
-func httpError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		http.Error(w, "not found", http.StatusNotFound)
-	case errors.Is(err, store.ErrForbidden):
-		http.Error(w, "forbidden", http.StatusForbidden)
-	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+func requireActor(c *gin.Context, s store.Store) (*models.User, bool) {
+	u, ok := actor(c, s)
+	if !ok {
+		fail(c, http.StatusUnauthorized, "unauthorized")
+		return nil, false
 	}
+	return u, true
 }
 
-// decodeJSON reads a JSON request body into dst. Returns a 400 on parse
-// failure (so the handler can `return` immediately).
-func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		http.Error(w, "invalid body: "+err.Error(), http.StatusBadRequest)
-		return false
-	}
-	return true
-}
-
-// requireAdmin returns true if the actor's role is admin. Handlers that
-// need admin gate themselves with this before mutating.
-func requireAdmin(w http.ResponseWriter, u *models.User) bool {
+func requireAdmin(c *gin.Context, u *models.User) bool {
 	if u.Role != models.RoleAdmin {
-		http.Error(w, "admin role required", http.StatusForbidden)
+		fail(c, http.StatusForbidden, "admin role required")
 		return false
 	}
 	return true
+}
+
+// Router builds the full API. The eighteen registrations here are the
+// contract; all four apps in this repo register the same set.
+func Router(s store.Store) *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+
+	// An unknown /api/* path returns the same JSON 404 as a cross-tenant
+	// miss. The two are told apart by the request path, not the response.
+	r.NoRoute(func(c *gin.Context) {
+		fail(c, http.StatusNotFound, "not found")
+	})
+
+	api := r.Group("/api")
+	{
+		api.POST("/login", Login(s))
+		api.POST("/logout", Logout(s))
+		api.GET("/me", Me(s))
+
+		api.GET("/members", ListMembers(s))
+		api.POST("/members", InviteMember(s))
+		api.DELETE("/members/:id", RemoveMember(s))
+		api.PUT("/members/:id/role", ChangeMemberRole(s))
+
+		api.GET("/resources", ListResources(s))
+		api.POST("/resources", RegisterResource(s))
+		api.POST("/resources/:id/decommission", DecommissionResource(s))
+
+		api.GET("/resources/:id/requests", ListResourceRequests(s))
+		api.POST("/resources/:id/requests", RequestAccess(s))
+		api.POST("/requests/:id/approve", ApproveRequest(s))
+		api.POST("/requests/:id/deny", DenyRequest(s))
+		api.POST("/requests/:id/revoke", RevokeRequest(s))
+
+		api.GET("/requests/:id/comments", ListRequestComments(s))
+		api.POST("/requests/:id/comments", AddComment(s))
+
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		})
+	}
+	return r
 }

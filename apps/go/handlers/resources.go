@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
@@ -13,19 +15,18 @@ import (
 // hiding so historical context stays visible).
 //
 // GET /api/resources → []Resource
-func ListResources(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func ListResources(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		resources, err := s.ListOrgResources(r.Context(), me.OrganizationID)
+		resources, err := s.ListOrgResources(c.Request.Context(), me.OrganizationID)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, resources)
+		c.JSON(http.StatusOK, resources)
 	}
 }
 
@@ -34,14 +35,13 @@ func ListResources(s store.Store) http.HandlerFunc {
 // which is privileged.
 //
 // POST /api/resources   {"name", "description", "sensitivity"} → Resource
-func RegisterResource(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func RegisterResource(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !requireAdmin(w, me) {
+		if !requireAdmin(c, me) {
 			return
 		}
 		var in struct {
@@ -49,25 +49,26 @@ func RegisterResource(s store.Store) http.HandlerFunc {
 			Description string `json:"description"`
 			Sensitivity string `json:"sensitivity"`
 		}
-		if !decodeJSON(w, r, &in) {
+		if err := c.ShouldBindJSON(&in); err != nil {
+			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}
 		in.Name = strings.TrimSpace(in.Name)
 		in.Description = strings.TrimSpace(in.Description)
 		in.Sensitivity = strings.TrimSpace(in.Sensitivity)
 		if in.Name == "" {
-			http.Error(w, "name required", http.StatusBadRequest)
+			fail(c, http.StatusBadRequest, "name required")
 			return
 		}
 		if in.Sensitivity == "" {
 			in.Sensitivity = models.SensitivityInternal
 		}
-		r2, err := s.RegisterResource(r.Context(), me.OrganizationID, in.Name, in.Description, in.Sensitivity, me.ID)
+		r2, err := s.RegisterResource(c.Request.Context(), me.OrganizationID, in.Name, in.Description, in.Sensitivity, me.ID)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, r2)
+		c.JSON(http.StatusCreated, r2)
 	}
 }
 
@@ -76,21 +77,20 @@ func RegisterResource(s store.Store) http.HandlerFunc {
 // is intact) but RequestAccess refuses new ones. Admin only.
 //
 // POST /api/resources/{id}/decommission → Resource
-func DecommissionResource(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func DecommissionResource(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !requireAdmin(w, me) {
+		if !requireAdmin(c, me) {
 			return
 		}
-		res, err := s.DecommissionResource(r.Context(), me.OrganizationID, r.PathValue("id"))
+		res, err := s.DecommissionResource(c.Request.Context(), me.OrganizationID, c.Param("id"))
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, res)
+		c.JSON(http.StatusOK, res)
 	}
 }

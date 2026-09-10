@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
@@ -12,24 +14,25 @@ import (
 // X-User-ID on every subsequent request.
 //
 // POST /api/login   {"email": "ada@acme.test"} → User
-func Login(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func Login(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		var in struct {
 			Email string `json:"email"`
 		}
-		if !decodeJSON(w, r, &in) {
+		if err := c.ShouldBindJSON(&in); err != nil {
+			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}
 		if in.Email == "" {
-			http.Error(w, "email required", http.StatusBadRequest)
+			fail(c, http.StatusBadRequest, "email required")
 			return
 		}
-		u, err := s.FindUserByEmail(r.Context(), in.Email)
+		u, err := s.FindUserByEmail(c.Request.Context(), in.Email)
 		if err != nil {
-			http.Error(w, "no user with that email", http.StatusUnauthorized)
+			fail(c, http.StatusUnauthorized, "no user with that email")
 			return
 		}
-		writeJSON(w, http.StatusOK, u)
+		c.JSON(http.StatusOK, u)
 	}
 }
 
@@ -38,14 +41,13 @@ func Login(s store.Store) http.HandlerFunc {
 // also the kind of auditable event a real auth system records.
 //
 // POST /api/logout → 204
-func Logout(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		_, ok := actorFromRequest(r, s)
+func Logout(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		c.Status(http.StatusNoContent)
 	}
 }
 
@@ -53,13 +55,12 @@ func Logout(s store.Store) http.HandlerFunc {
 // load to rehydrate its session from localStorage.
 //
 // GET /api/me → User
-func Me(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		u, ok := actorFromRequest(r, s)
+func Me(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		writeJSON(w, http.StatusOK, u)
+		c.JSON(http.StatusOK, u)
 	}
 }

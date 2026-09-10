@@ -44,42 +44,9 @@ func main() {
 		log.Fatalf("seed: %v", err)
 	}
 
-	api := http.NewServeMux()
+	api := handlers.Router(st)
 
-	// Auth
-	api.HandleFunc("POST /api/login", handlers.Login(st))
-	api.HandleFunc("POST /api/logout", handlers.Logout(st))
-	api.HandleFunc("GET /api/me", handlers.Me(st))
-
-	// Members (organization-scoped; admin-only writes)
-	api.HandleFunc("GET /api/members", handlers.ListMembers(st))
-	api.HandleFunc("POST /api/members", handlers.InviteMember(st))
-	api.HandleFunc("DELETE /api/members/{id}", handlers.RemoveMember(st))
-	api.HandleFunc("PUT /api/members/{id}/role", handlers.ChangeMemberRole(st))
-
-	// Resources (things you can request access to)
-	api.HandleFunc("GET /api/resources", handlers.ListResources(st))
-	api.HandleFunc("POST /api/resources", handlers.RegisterResource(st))
-	api.HandleFunc("POST /api/resources/{id}/decommission", handlers.DecommissionResource(st))
-
-	// Access requests
-	api.HandleFunc("GET /api/resources/{id}/requests", handlers.ListResourceRequests(st))
-	api.HandleFunc("POST /api/resources/{id}/requests", handlers.RequestAccess(st))
-	api.HandleFunc("POST /api/requests/{id}/approve", handlers.ApproveRequest(st))
-	api.HandleFunc("POST /api/requests/{id}/deny", handlers.DenyRequest(st))
-	api.HandleFunc("POST /api/requests/{id}/revoke", handlers.RevokeRequest(st))
-
-	// Comments
-	api.HandleFunc("GET /api/requests/{id}/comments", handlers.ListRequestComments(st))
-	api.HandleFunc("POST /api/requests/{id}/comments", handlers.AddComment(st))
-
-	// Health
-	api.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
-
-	// Static SPA. /api/* hits the API mux; everything else falls
+	// Static SPA. /api/* hits the gin router; everything else falls
 	// through to the embedded React build under web/dist.
 	staticHandler, err := newStaticHandler()
 	if err != nil {

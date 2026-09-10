@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
@@ -11,19 +13,18 @@ import (
 // newest first. Workspace-scoped via the store.
 //
 // GET /api/resources/{id}/requests → []AccessRequest
-func ListResourceRequests(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func ListResourceRequests(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		reqs, err := s.ListResourceRequests(r.Context(), me.OrganizationID, r.PathValue("id"))
+		reqs, err := s.ListResourceRequests(c.Request.Context(), me.OrganizationID, c.Param("id"))
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, reqs)
+		c.JSON(http.StatusOK, reqs)
 	}
 }
 
@@ -31,30 +32,30 @@ func ListResourceRequests(s store.Store) http.HandlerFunc {
 // Anyone in the organization can request - approval is gated separately.
 //
 // POST /api/resources/{id}/requests   {"reason"} → AccessRequest
-func RequestAccess(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func RequestAccess(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		var in struct {
 			Reason string `json:"reason"`
 		}
-		if !decodeJSON(w, r, &in) {
+		if err := c.ShouldBindJSON(&in); err != nil {
+			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}
 		in.Reason = strings.TrimSpace(in.Reason)
 		if in.Reason == "" {
-			http.Error(w, "reason required", http.StatusBadRequest)
+			fail(c, http.StatusBadRequest, "reason required")
 			return
 		}
-		req, err := s.RequestAccess(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID, in.Reason)
+		req, err := s.RequestAccess(c.Request.Context(), u.OrganizationID, c.Param("id"), u.ID, in.Reason)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, req)
+		c.JSON(http.StatusCreated, req)
 	}
 }
 
@@ -62,22 +63,21 @@ func RequestAccess(s store.Store) http.HandlerFunc {
 // the privileged decision in this domain.
 //
 // POST /api/requests/{id}/approve → AccessRequest
-func ApproveRequest(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func ApproveRequest(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !requireAdmin(w, me) {
+		if !requireAdmin(c, me) {
 			return
 		}
-		req, err := s.ApproveRequest(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID)
+		req, err := s.ApproveRequest(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, req)
+		c.JSON(http.StatusOK, req)
 	}
 }
 
@@ -85,22 +85,21 @@ func ApproveRequest(s store.Store) http.HandlerFunc {
 // the requester would need to file a fresh request to try again.
 //
 // POST /api/requests/{id}/deny → AccessRequest
-func DenyRequest(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func DenyRequest(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !requireAdmin(w, me) {
+		if !requireAdmin(c, me) {
 			return
 		}
-		req, err := s.DenyRequest(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID)
+		req, err := s.DenyRequest(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, req)
+		c.JSON(http.StatusOK, req)
 	}
 }
 
@@ -109,41 +108,39 @@ func DenyRequest(s store.Store) http.HandlerFunc {
 // them back out." Audit-critical: who revoked, when, why.
 //
 // POST /api/requests/{id}/revoke → AccessRequest
-func RevokeRequest(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func RevokeRequest(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if !requireAdmin(w, me) {
+		if !requireAdmin(c, me) {
 			return
 		}
-		req, err := s.RevokeRequest(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID)
+		req, err := s.RevokeRequest(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, req)
+		c.JSON(http.StatusOK, req)
 	}
 }
 
 // ListRequestComments returns every comment on an access request.
 //
 // GET /api/requests/{id}/comments → []Comment
-func ListRequestComments(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func ListRequestComments(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		comments, err := s.ListRequestComments(r.Context(), me.OrganizationID, r.PathValue("id"))
+		comments, err := s.ListRequestComments(c.Request.Context(), me.OrganizationID, c.Param("id"))
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, comments)
+		c.JSON(http.StatusOK, comments)
 	}
 }
 
@@ -152,29 +149,29 @@ func ListRequestComments(s store.Store) http.HandlerFunc {
 // and by requesters to add follow-up info.
 //
 // POST /api/requests/{id}/comments   {"body"} → Comment
-func AddComment(s store.Store) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		me, ok := actorFromRequest(r, s)
+func AddComment(s store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		me, ok := requireActor(c, s)
 		if !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		var in struct {
 			Body string `json:"body"`
 		}
-		if !decodeJSON(w, r, &in) {
+		if err := c.ShouldBindJSON(&in); err != nil {
+			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}
 		in.Body = strings.TrimSpace(in.Body)
 		if in.Body == "" {
-			http.Error(w, "body required", http.StatusBadRequest)
+			fail(c, http.StatusBadRequest, "body required")
 			return
 		}
-		c, err := s.AddComment(r.Context(), me.OrganizationID, r.PathValue("id"), me.ID, in.Body)
+		cm, err := s.AddComment(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID, in.Body)
 		if err != nil {
-			httpError(w, err)
+			failStore(c, err)
 			return
 		}
-		writeJSON(w, http.StatusCreated, c)
+		c.JSON(http.StatusCreated, cm)
 	}
 }
