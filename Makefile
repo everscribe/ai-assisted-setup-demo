@@ -11,7 +11,7 @@ verify:
 	@echo "conformance harness lands in plan 2"
 
 dev-go:
-	cd apps/go/web && pnpm install && pnpm run build
+	cd apps/go/web && pnpm install --frozen-lockfile && pnpm run build
 	cd apps/go && PORT=9001 go run .
 
 check-clean:
@@ -28,9 +28,9 @@ check-clean:
 	  [ -f "$$f" ] && files="$$files $$f"; \
 	done; \
 	hits=""; [ -n "$$files" ] && hits=$$(for f in $$files; do \
-	  sed 's|github\.com/everscribe/ai-assisted-setup-demo||g' "$$f" | grep -nE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=|everscribe/|^[[:space:]]*everscribe[[:space:]]*[<>=!~]' | sed "s|^|$$f:|"; \
+	  LC_ALL=C sed 's|github\.com/everscribe/ai-assisted-setup-demo||g' "$$f" | LC_ALL=C grep -naE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=|everscribe/|^[[:space:]]*everscribe[[:space:]]*[<>=!~]' | LC_ALL=C sed "s|^|$$f:|"; \
 	done); \
-	src=$$(grep -rnE '@everscribe/components-' apps/*/web/src 2>/dev/null); \
+	src=$$(LC_ALL=C grep -ranE '@everscribe/components-' apps/*/web/src 2>/dev/null); \
 	if [ -n "$$hits$$src" ]; then \
 	  echo "everscribe dependency on main:"; echo "$$hits"; echo "$$src"; exit 1; \
 	fi

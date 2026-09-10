@@ -40,6 +40,12 @@ run "lockfile-only dep" 'echo "{\"dependencies\":{\"left-pad\":\"^1.0.0\"}}" > a
 run "allowlist bypass in go.mod"  'echo "require github.com/everscribe/sdk-go v0.1.0 // see github.com/everscribe/ai-assisted-setup-demo/apps/go" >> apps/go/go.mod'
 run "allowlist bypass in json"    'echo "{\"dependencies\":{\"@everscribe/sdk-node\":\"^0.1.0\"},\"_n\":\"github.com/everscribe/ai-assisted-setup-demo\"}" > apps/node/package.json'
 
+# A non-UTF-8 byte on the same line as the dependency. BSD sed aborts with
+# "illegal byte sequence" and BSD grep suppresses matches in a line it reads
+# as binary, so without LC_ALL=C and grep -a the guard reports a false clean.
+run "non-utf8 byte on dep line"   'printf "{\"x\":\"\xff\",\"dependencies\":{\"@everscribe/sdk-node\":\"^0.1.0\"}}\n" > apps/node/package.json'
+run "non-utf8 byte in web/src"    'printf "import \"@everscribe/components-react\"; // \xff\n" > apps/node/web/src/main.ts'
+
 D=$(mktemp -d); cp "$MAKEFILE" "$D/Makefile"
 ( cd "$D"; mkdir -p apps/go
   printf 'module github.com/everscribe/ai-assisted-setup-demo/apps/go\n' > apps/go/go.mod
