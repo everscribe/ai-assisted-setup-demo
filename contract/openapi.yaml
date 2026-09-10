@@ -1,0 +1,680 @@
+openapi: 3.0.3
+info:
+  title: Access portal demo
+  version: "1.0.0"
+  description: >
+    The contract all four demo apps implement. Written from the Go app's
+    behaviour. Every app registers exactly these eighteen routes.
+
+    Auth is a single header, X-User-ID, set by the SPA after POST
+    /api/login. There are no sessions and no passwords. POST /api/login
+    and GET /api/health are the only two anonymous routes; every other
+    route requires X-User-ID to name a seeded user or it fails with 401.
+
+    Status codes used across the API, beyond the per-route 2xx:
+    - 400: request body missing or invalid for that route.
+    - 401: X-User-ID is missing or does not match a known user.
+    - 403: the actor is authenticated but not an admin, on an admin-only
+      route. Body is exactly {"error": "admin role required"}.
+    - 404: either the path does not exist, or the path names a resource
+      outside the actor's organization. Both cases return the identical
+      body {"error": "not found"}, on purpose, so a cross-tenant probe
+      cannot tell "wrong tenant" from "does not exist".
+    - 405: the path exists but not for this method, for example GET on
+      a POST-only route such as /api/login. The response carries an
+      Allow header listing the methods that are registered for the path.
+    - 409: the store rejected a state transition that does not apply,
+      for example approving a request that is already denied, or
+      requesting access to a decommissioned resource.
+
+    A registered path does not redirect on a trailing slash. GET
+    /api/me/ is a 404, not a redirect to /api/me. A redirect would let a
+    caller distinguish "exists" from "does not exist" by probing paths,
+    which is the same leak the cross-tenant 404 rule closes.
+
+    Every response, success or error, is application/json; charset=utf-8.
+    This includes GET /api/health.
+
+servers:
+  - url: /api
+
+security:
+  - UserID: []
+
+paths:
+  /login:
+    post:
+      summary: Log in by email
+      description: >
+        Looks up a seeded user by email. No password; this is a demo.
+        The frontend stores the returned user's id and sends it as
+        X-User-ID on every later request.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: No user with that email.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "no user with that email"}
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /logout:
+    post:
+      summary: Log out
+      description: >
+        No server-side session to clear. The route exists so the SPA has
+        a real call to make on sign-out.
+      responses:
+        '204':
+          description: Logged out.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /me:
+    get:
+      summary: Get the current user
+      responses:
+        '200':
+          description: The authenticated user.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /members:
+    get:
+      summary: List members of the actor's organization
+      description: >
+        Ordered by id ascending. See x-ordering.
+      responses:
+        '200':
+          description: Members of the actor's organization.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/User'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Invite a member
+      description: Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMemberRequest'
+      responses:
+        '201':
+          description: The new member.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /members/{id}:
+    delete:
+      summary: Remove a member
+      description: Admin only.
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /members/{id}/role:
+    put:
+      summary: Change a member's role
+      description: Admin only.
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeMemberRoleRequest'
+      responses:
+        '200':
+          description: The updated member.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /resources:
+    get:
+      summary: List resources in the actor's organization
+      description: >
+        Includes decommissioned resources so historical context stays
+        visible. Ordered by id ascending. See x-ordering.
+      responses:
+        '200':
+          description: Resources in the actor's organization.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Resource'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Register a resource
+      description: Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterResourceRequest'
+      responses:
+        '201':
+          description: The new resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Resource'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /resources/{id}/decommission:
+    post:
+      summary: Decommission a resource
+      description: >
+        Admin only. Existing access requests are preserved; new access
+        requests against the resource fail with 409.
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: The decommissioned resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Resource'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /resources/{id}/requests:
+    get:
+      summary: List access requests for a resource
+      description: >
+        Ordered by created_at descending, then id ascending. See
+        x-ordering. The tiebreak is load-bearing: without it, requests
+        with an equal created_at order arbitrarily under Go's unstable
+        sort, while the other three languages' stable sorts would not.
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Access requests for the resource.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Request access to a resource
+      description: >
+        Any organization member can request access. Fails with 409 if
+        the resource has been decommissioned.
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestAccessRequest'
+      responses:
+        '201':
+          description: The new access request, in pending status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/approve:
+    post:
+      summary: Approve a pending request
+      description: >
+        Admin only. Fails with 409 if the request is not pending, for
+        example already approved, denied, or revoked.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The approved request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/deny:
+    post:
+      summary: Deny a pending request
+      description: >
+        Admin only. Denial is terminal. Fails with 409 if the request is
+        not pending.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The denied request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/revoke:
+    post:
+      summary: Revoke a previously approved request
+      description: >
+        Admin only. Fails with 409 if the request is not currently
+        approved, for example approving an already-denied request is
+        409 the same way.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The revoked request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/comments:
+    get:
+      summary: List comments on a request
+      description: >
+        Ordered by created_at ascending, then id ascending. See
+        x-ordering.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Comments on the request.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Comment'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Add a comment to a request
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCommentRequest'
+      responses:
+        '201':
+          description: The new comment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Comment'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /health:
+    get:
+      summary: Health check
+      description: The only other anonymous route besides login.
+      security: []
+      responses:
+        '200':
+          description: Always ok when the process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, enum: [ok]}
+                additionalProperties: false
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+components:
+  securitySchemes:
+    UserID:
+      type: apiKey
+      in: header
+      name: X-User-ID
+      description: >
+        The id of a seeded user. There is no token; the header value is
+        looked up directly. Missing or unknown is a 401.
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+      description: A user id, for example u_ada.
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+      description: A resource id, for example r_acme_pg.
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+      description: An access request id, for example req_acme_1.
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+      additionalProperties: false
+
+    Organization:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    User:
+      type: object
+      required: [id, name, email, role, organization_id, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        email: {type: string}
+        role: {type: string, enum: [admin, member]}
+        organization_id: {type: string}
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    Resource:
+      type: object
+      required: [id, name, description, sensitivity, organization_id, registered_by, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        sensitivity:
+          type: string
+          description: >
+            Free-form label. The seeded cast uses public, internal,
+            confidential, and restricted, but the field is not an enum.
+        organization_id: {type: string}
+        registered_by: {type: string, description: The id of the user who registered the resource.}
+        created_at: {type: string, format: date-time}
+        decommission_at:
+          type: string
+          format: date-time
+          description: Present only once the resource has been decommissioned.
+      additionalProperties: false
+
+    AccessRequest:
+      type: object
+      required: [id, resource_id, organization_id, requested_by, reason, status, created_at]
+      properties:
+        id: {type: string}
+        resource_id: {type: string}
+        organization_id: {type: string}
+        requested_by: {type: string}
+        reason: {type: string}
+        status: {type: string, enum: [pending, approved, denied, revoked]}
+        decided_by:
+          type: string
+          description: The admin who approved or denied. Absent while pending.
+        decided_at:
+          type: string
+          format: date-time
+          description: Absent while pending.
+        revoked_by:
+          type: string
+          description: The admin who revoked. Present only once revoked.
+        revoked_at:
+          type: string
+          format: date-time
+          description: Present only once revoked.
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    Comment:
+      type: object
+      required: [id, request_id, organization_id, author_id, body, created_at]
+      properties:
+        id: {type: string}
+        request_id: {type: string}
+        organization_id: {type: string}
+        author_id: {type: string}
+        body: {type: string}
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    LoginRequest:
+      type: object
+      required: [email]
+      properties:
+        email: {type: string}
+      additionalProperties: false
+
+    InviteMemberRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name: {type: string}
+        email: {type: string}
+        role:
+          type: string
+          enum: [admin, member]
+          description: Defaults to member if omitted or not one of admin, member.
+      additionalProperties: false
+
+    ChangeMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: {type: string, enum: [admin, member]}
+      additionalProperties: false
+
+    RegisterResourceRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        sensitivity:
+          type: string
+          description: Defaults to internal if omitted.
+      additionalProperties: false
+
+    RequestAccessRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string}
+      additionalProperties: false
+
+    AddCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body: {type: string}
+      additionalProperties: false
+
+  responses:
+    BadRequest:
+      description: The request body was missing a required field or failed to parse.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: X-User-ID is missing or does not name a known user.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: unauthorized}
+    Forbidden:
+      description: The actor is authenticated but is not an admin.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "admin role required"}
+    NotFound:
+      description: >
+        Returned both for an unknown path and for a resource in another
+        tenant. The two are deliberately identical so the boundary does
+        not leak existence.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "not found"}
+    Conflict:
+      description: The store rejected a state transition that does not apply.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: conflict}
+    MethodNotAllowed:
+      description: >
+        The path is registered but not for this method. The response
+        carries an Allow header listing the methods that are.
+      headers:
+        Allow:
+          schema: {type: string}
+          description: Comma-separated list of methods registered for this path.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "method not allowed"}
+
+x-ordering:
+  description: >
+    Total order for every list endpoint. The domain key, then id
+    ascending as tiebreak. Without the tiebreak, equal timestamps order
+    arbitrarily and Go's unstable sort diverges from the stable sorts
+    in JS, Python, and Rust.
+  GET /api/members:                   [id asc]
+  GET /api/resources:                 [id asc]
+  GET /api/resources/{id}/requests:   [created_at desc, id asc]
+  GET /api/requests/{id}/comments:    [created_at asc, id asc]
