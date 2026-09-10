@@ -19,8 +19,9 @@ attributable to the skill rather than to the app.
 This repo's entire job is to be a clean target. On `main`:
 
 - No Everscribe SDK appears in `go.mod`, `pyproject.toml`, `package.json`,
-  or `Cargo.toml`.
-- No `@everscribe/components-*` appears in any frontend.
+  or `Cargo.toml`, or in any lockfile.
+- No `@everscribe/components-*` appears in any frontend, whether as a
+  dependency or as a CDN `<script>` tag.
 - No audit event is recorded anywhere.
 
 The apps carry *seams* where instrumentation belongs (a store interface, a
@@ -99,9 +100,23 @@ Eighteen registrations per app, identical paths and methods across all four.
 | Comments | `POST /api/requests/{id}/comments` |
 | Health | `GET /api/health` |
 
-An unknown `/api/*` path returns 404 with an empty body. This is pinned in
-the contract because the four frameworks disagree by default: Gin returns
-404 with an empty body, Express returns an HTML error page.
+Two different 404s exist and the contract distinguishes them, because the
+security layer would otherwise read a routing miss as a tenant-boundary
+refusal:
+
+- **Unknown path.** Any `/api/*` that matches no route returns
+  `404 {"error":"not found"}`.
+- **Cross-tenant or absent resource.** A route that matched but resolved
+  nothing returns `404 {"error":"not found"}` with the same body, on
+  purpose, so the boundary does not leak existence. The two are told apart
+  by the request path, not the response.
+
+Both are JSON. An empty body would not validate against any schema, which
+would force a carve-out in layer 1 of the harness. Pinning this matters
+because the frameworks disagree by default: FastAPI returns
+`{"detail":"Not Found"}`, Axum returns an empty body, Express returns an
+HTML error page. FastAPI's default is the dangerous one, since it looks
+plausible enough to leave in place by accident.
 
 Auth is deliberately minimal: the SPA posts an email to `/api/login`, then
 attaches `X-User-ID` on every subsequent request. Real apps use sessions or
@@ -115,9 +130,9 @@ ai-assisted-setup-demo/
   apps/
     go/       go.mod, main.go, handlers/, store/, store/memory/, models/,
               web/, Dockerfile, README.md
-    python/   pyproject.toml, app/, web/, Dockerfile, README.md
     node/     package.json, src/, web/, Dockerfile, README.md
     rust/     Cargo.toml, src/, web/, Dockerfile, README.md
+    python/   pyproject.toml, app/, web/, Dockerfile, README.md
   contract/
     openapi.yaml
     seed.json
@@ -133,8 +148,9 @@ Each app is self-contained. `cd apps/rust && docker build .` works with no
 reference to anything outside that directory, because that is what we point
 the hosted instrument flow at.
 
-Ports are fixed and distinct so all four run at once: Go 9001, Python 9002,
-Node 9003, Rust 9004. Each server reads `PORT` and falls back to its default,
+Ports are fixed and distinct so all four run at once: Go 9001, Node 9002,
+Rust 9003, Python 9004. Each server reads `PORT` and falls back to its
+default, as today's `main.go` already does, since compose sets it.
 as today's `main.go` already does, since compose sets it.
 
 ### The Go module moves
@@ -194,7 +210,7 @@ argument.
 | App | Store interface | How the SDK actually threads context |
 |---|---|---|
 | Go | `interface` | `context.Context` as first argument |
-| Python | `Protocol` | `contextvars`, set by the ASGI middleware (`everscribe/event/context.py`) |
+| Python | `Protocol` | `contextvars`, set by the ASGI middleware (`sdk-python/src/everscribe/event/context.py`) |
 | Node | `interface` | `AsyncLocalStorage` |
 | Rust | `#[async_trait] trait Store: Send + Sync`, held as `Arc<dyn Store>` | request extensions (`sdk-rust/src/event/context.rs`) |
 
@@ -335,11 +351,16 @@ reason Angular was not chosen: the Angular CLI writes
 `web/dist/<project>/browser`, which would have made one app's static path a
 special case for no gain in what is being measured.
 
+Svelte here means Svelte 4 plus Vite, not SvelteKit, matching what
+`docs/examples/svelte-node.md` publishes. SvelteKit with `adapter-static`
+writes `build/` rather than `web/dist`, which would reintroduce exactly the
+per-app static path this uniformity exists to avoid.
+
 Root `Makefile`:
 
 | Target | Effect |
 |---|---|
-| `make up` | compose up all four apps |
+| `make up` | compose up whichever apps are defined |
 | `make down` | compose down |
 | `make verify` | up, run conformance, down |
 | `make check-clean` | fail if any Everscribe dependency is present |
@@ -356,30 +377,50 @@ manifest or lockfile. It matches exact dependency identifiers, never a bare
 `everscribe`, because the Go module path is `github.com/everscribe/...` and a
 fuzzy grep would fail on a clean `main` forever.
 
-| Ecosystem | Banned identifier |
-|---|---|
-| Go | `github.com/everscribe/sdk-go` in `go.mod`, `go.sum` |
-| Node | `@everscribe/sdk-node` in `package.json`, lockfile |
-| Frontends | `@everscribe/components-` (matches core, element, react, styles) |
-| Python | a bare `everscribe` in `pyproject.toml` dependencies |
-| Rust | a bare `everscribe` under `[dependencies]` in `Cargo.toml` |
+| Ecosystem | Banned identifier | Files scanned |
+|---|---|---|
+| Go | `github.com/everscribe/sdk-go` | `go.mod`, `go.sum` |
+| Node | `@everscribe/sdk-node` | `package.json`, `pnpm-lock.yaml` |
+| Frontends | `@everscribe/components-` (core, element, react, styles) | `web/package.json` and lockfile, `web/index.html`, `web/dist/index.html`, `web/src/**` |
+| Python | a quoted `everscribe...` in dependencies | `pyproject.toml`, `uv.lock` |
+| Rust | `everscribe =` under `[dependencies]` | `Cargo.toml`, `Cargo.lock` |
+
+Lock tooling is pinned so the lockfile names are knowable: `uv` for Python,
+`pnpm` for Node, matching what `sdk-node` and `components` already use.
 
 ```make
 check-clean:
-	@! grep -rnE 'everscribe/sdk-go|@everscribe/(sdk-node|components-)' \
-		apps/*/go.mod apps/*/go.sum apps/*/package.json apps/*/package-lock.json \
-		apps/*/web/package.json apps/*/web/package-lock.json \
-		apps/*/Cargo.toml apps/*/Cargo.lock apps/*/pyproject.toml apps/*/uv.lock \
-		|| { echo "everscribe dependency on main"; exit 1; }
-	@! grep -nE '^\s*everscribe\s*[=~<>"]' apps/rust/Cargo.toml apps/python/pyproject.toml \
-		|| { echo "everscribe dependency on main"; exit 1; }
-	@! grep -rn 'components-element' apps/*/web/index.html apps/*/web/src \
-		|| { echo "everscribe component loaded outside a manifest"; exit 1; }
+	@files=""; \
+	for f in apps/*/go.mod apps/*/go.sum apps/*/package.json apps/*/pnpm-lock.yaml \
+	         apps/*/web/package.json apps/*/web/pnpm-lock.yaml \
+	         apps/*/Cargo.toml apps/*/Cargo.lock apps/*/pyproject.toml apps/*/uv.lock \
+	         apps/*/web/index.html apps/*/web/dist/index.html; do \
+	  [ -f "$$f" ] && files="$$files $$f"; \
+	done; \
+	hits=$$(grep -nE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=' $$files 2>/dev/null); \
+	src=$$(grep -rnE '@everscribe/components-' apps/*/web/src 2>/dev/null); \
+	if [ -n "$$hits$$src" ]; then \
+	  echo "everscribe dependency on main:"; echo "$$hits"; echo "$$src"; exit 1; \
+	fi
 ```
 
-Lockfiles are in scope. So is a CDN `<script src=...components-element...>`
-tag, which bypasses every manifest and is the one way to instrument a
-frontend without touching a dependency file.
+**Build the file list before matching.** This is not style. `grep` exits 2
+when any file argument is unreadable, and `! grep` inverts 2 to 0, so a
+guard written as `! grep ... || exit 1` prints the violation and then reports
+clean. Missing files are the normal state rather than an edge case: there is
+no `uv.lock` until Python lands, no `Cargo.lock` until Rust lands, and no
+`apps/*/go.sum` at all until the Go app takes its first dependency. During
+Plans 1 and 2, when only `apps/go` exists, nearly every glob is unmatched.
+
+**Two caveats.** The `"everscribe[^"]*"` pattern would also match an app
+literally named `everscribe-something`, so the four apps must not be named
+that way. And the frontend pattern is `@everscribe/components-`, matching the
+stated rule, not `components-element`: the Go app's React frontend is meant
+to attract `components-react`, which a narrower pattern would wave through.
+
+Scanning `web/dist/index.html` matters because that file is checked into
+source control by design, so a CDN `<script>` tag can reach `main` there
+without touching any manifest.
 
 It runs in CI on `main`, in a workflow this repo does not have yet. See
 Plan 1.
@@ -400,7 +441,13 @@ port it from stdlib to Gin, introduce the `Store` interface and
 `store/memory`, plumb context. Write `contract/openapi.yaml` and
 `contract/seed.json` from the resulting behaviour. Add the root `Makefile`,
 compose file, `make check-clean`, and `.github/workflows/ci.yml` running it.
-At the end, one app works and the
+At the end, one app works and the contract is written down.
+
+`make check-clean` is not done when it is written. It is done when it has
+been run against a tree with a planted violation in each of the five
+ecosystems and observed to exit non-zero, and against a clean tree and
+observed to exit zero. A guard that reports clean on a dirty tree is worse
+than no guard, because it gets trusted.
 contract is written down.
 
 **Plan 2: conformance harness.** Build the runner and the normalizer against
