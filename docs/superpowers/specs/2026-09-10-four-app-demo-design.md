@@ -151,7 +151,6 @@ the hosted instrument flow at.
 Ports are fixed and distinct so all four run at once: Go 9001, Node 9002,
 Rust 9003, Python 9004. Each server reads `PORT` and falls back to its
 default, as today's `main.go` already does, since compose sets it.
-as today's `main.go` already does, since compose sets it.
 
 ### The Go module moves
 
@@ -289,7 +288,8 @@ Three layers of assertion:
    that.
 3. **Security invariants**, asserted explicitly rather than by comparison,
    because these must be right rather than merely consistent:
-   - cross-tenant reads return 404
+   - cross-tenant reads return 404, each one paired with a positive control:
+     the same route and method with a same-tenant id must return 200 first
    - member writes to admin-only routes return 403
    - a missing `X-User-ID` returns 401 on every route except
      `POST /api/login` and `GET /api/health`, which are anonymous by
@@ -385,19 +385,26 @@ fuzzy grep would fail on a clean `main` forever.
 | Python | a quoted `everscribe...` in dependencies | `pyproject.toml`, `uv.lock` |
 | Rust | `everscribe =` under `[dependencies]` | `Cargo.toml`, `Cargo.lock` |
 
-Lock tooling is pinned so the lockfile names are knowable: `uv` for Python,
-`pnpm` for Node, matching what `sdk-node` and `components` already use.
+Lock tooling is pinned so the lockfile names are knowable: `pnpm` for Node,
+matching `sdk-node` and `components`, which already use it. `uv` for Python
+is a new choice rather than an existing convention, since `sdk-python` has no
+lockfile today and builds with hatchling. The guard scans npm and yarn
+lockfiles anyway, because the demo's frontend is npm today and a stale
+`package-lock.json` surviving the move is the likeliest way a dependency
+slips past.
 
 ```make
 check-clean:
 	@files=""; \
-	for f in apps/*/go.mod apps/*/go.sum apps/*/package.json apps/*/pnpm-lock.yaml \
+	for f in apps/*/go.mod apps/*/go.sum \
+	         apps/*/package.json apps/*/pnpm-lock.yaml apps/*/package-lock.json \
 	         apps/*/web/package.json apps/*/web/pnpm-lock.yaml \
+	         apps/*/web/package-lock.json apps/*/web/yarn.lock \
 	         apps/*/Cargo.toml apps/*/Cargo.lock apps/*/pyproject.toml apps/*/uv.lock \
 	         apps/*/web/index.html apps/*/web/dist/index.html; do \
 	  [ -f "$$f" ] && files="$$files $$f"; \
 	done; \
-	hits=$$(grep -nE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=' $$files 2>/dev/null); \
+	hits=""; [ -n "$$files" ] && hits=$$(grep -nE '@everscribe/(sdk-node|components-)|everscribe/sdk-go|"everscribe[^"]*"|^[[:space:]]*everscribe[[:space:]]*=' $$files 2>/dev/null); \
 	src=$$(grep -rnE '@everscribe/components-' apps/*/web/src 2>/dev/null); \
 	if [ -n "$$hits$$src" ]; then \
 	  echo "everscribe dependency on main:"; echo "$$hits"; echo "$$src"; exit 1; \
@@ -442,6 +449,11 @@ port it from stdlib to Gin, introduce the `Store` interface and
 `contract/seed.json` from the resulting behaviour. Add the root `Makefile`,
 compose file, `make check-clean`, and `.github/workflows/ci.yml` running it.
 At the end, one app works and the contract is written down.
+
+Moving `web/` to `apps/go/web/` includes migrating it from npm to pnpm and
+deleting `package-lock.json`. Today the demo runs `npm install` and checks in
+a 58KB `web/package-lock.json`, so without this step the pin above is true
+of the spec and false of the tree.
 
 `make check-clean` is not done when it is written. It is done when it has
 been run against a tree with a planted violation in each of the five
