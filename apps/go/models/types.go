@@ -100,7 +100,10 @@ const (
 	RoleMember = "member"
 )
 
-// Sensitivity constants - free-form, but these four are seeded.
+// Sensitivity constants. The field is free-form, so any string round
+// trips; these four are the labels the app recognises, and an omitted
+// sensitivity defaults to internal. The seeded cast only uses
+// confidential and restricted.
 const (
 	SensitivityPublic       = "public"
 	SensitivityInternal     = "internal"

@@ -19,3 +19,6 @@ apps/*/web/dist/*
 .idea/
 .vscode/
 *.swp
+
+# TypeScript incremental build state.
+apps/*/web/tsconfig.tsbuildinfo
