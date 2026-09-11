@@ -1,0 +1,46 @@
+package conformance
+
+// Step is one request in the lifecycle sequence.
+type Step struct {
+	Name   string
+	Method string
+	Path   string
+	Actor  string
+	Body   string
+}
+
+// Lifecycle is the scripted sequence replayed against every app. It
+// covers login, listing, requesting access, commenting, approving, and
+// revoking. It is deliberately free of generated ids: every path uses a
+// seeded id, so the same script runs against any app without threading
+// state between steps.
+func Lifecycle() []Step {
+	return []Step{
+		{"login as admin", "POST", "/api/login", "", `{"email":"ada@acme.test"}`},
+		{"whoami", "GET", "/api/me", "u_ada", ""},
+		{"list members", "GET", "/api/members", "u_ada", ""},
+		{"list resources", "GET", "/api/resources", "u_ada", ""},
+		{"list requests on pg", "GET", "/api/resources/r_acme_pg/requests", "u_ada", ""},
+		{"list comments", "GET", "/api/requests/req_acme_1/comments", "u_ada", ""},
+
+		{"member requests access", "POST", "/api/resources/r_acme_s3/requests", "u_linus", `{"reason":"quarterly audit"}`},
+		{"member comments", "POST", "/api/requests/req_acme_1/comments", "u_linus", `{"body":"still needed"}`},
+		{"admin comments", "POST", "/api/requests/req_acme_1/comments", "u_ada", `{"body":"approved verbally"}`},
+		{"comments after posting", "GET", "/api/requests/req_acme_1/comments", "u_ada", ""},
+
+		{"approve pending", "POST", "/api/requests/req_acme_1/approve", "u_ada", ""},
+		{"revoke it", "POST", "/api/requests/req_acme_1/revoke", "u_ada", ""},
+		{"approve already revoked", "POST", "/api/requests/req_acme_1/approve", "u_ada", ""},
+		{"deny already denied", "POST", "/api/requests/req_acme_3/deny", "u_ada", ""},
+
+		{"register resource", "POST", "/api/resources", "u_ada", `{"name":"vault-prod","description":"secrets","sensitivity":"restricted"}`},
+		{"invite member", "POST", "/api/members", "u_ada", `{"name":"Barbara Liskov","email":"barbara@acme.test","role":"member"}`},
+		{"members after invite", "GET", "/api/members", "u_ada", ""},
+		{"decommission", "POST", "/api/resources/r_acme_s3/decommission", "u_ada", ""},
+		{"resources after changes", "GET", "/api/resources", "u_ada", ""},
+
+		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
+		{"method mismatch", "GET", "/api/login", "u_ada", ""},
+		{"logout", "POST", "/api/logout", "u_ada", ""},
+	}
+}
