@@ -134,11 +134,8 @@ export class MemoryStore implements Store {
   async decommissionResource(orgId: string, resourceId: string): Promise<Resource> {
     const resource = this.resources.get(resourceId);
     if (!resource || resource.organization_id !== orgId) throw ErrNotFound;
-    // Not stated explicitly by the contract: decommissioning an
-    // already-decommissioned resource is treated the same as the other
-    // terminal state transitions in this contract (approve/deny/revoke),
-    // where repeating one is a 409. See CONTRACT-LOG.md.
-    if (resource.decommission_at) throw ErrConflict;
+    // Idempotent per the contract: an already-decommissioned resource
+    // returns 200 again with decommission_at re-stamped, not 409.
     const updated: Resource = { ...resource, decommission_at: now() };
     this.resources.set(resourceId, updated);
     return { ...updated };

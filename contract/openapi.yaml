@@ -204,7 +204,10 @@ paths:
           $ref: '#/components/responses/MethodNotAllowed'
     post:
       summary: Invite a member
-      description: Admin only.
+      description: >
+        Admin only. Email uniqueness is not enforced: a duplicate email,
+        including one already belonging to a seeded user, creates a
+        second user and returns 201.
       requestBody:
         required: true
         content:
@@ -321,12 +324,17 @@ paths:
       summary: Decommission a resource
       description: >
         Admin only. Existing access requests are preserved; new access
-        requests against the resource fail with 409.
+        requests against the resource fail with 409. Idempotent:
+        decommissioning an already-decommissioned resource returns 200
+        again and re-stamps decommission_at, rather than 409.
       parameters:
         - $ref: '#/components/parameters/ResourceId'
       responses:
         '200':
-          description: The decommissioned resource.
+          description: >
+            The decommissioned resource. Returned again, with
+            decommission_at re-stamped to the new call's time, if the
+            resource was already decommissioned.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Resource'}
@@ -767,6 +775,10 @@ x-ordering:
     independently written apps, since generated ids are a random hex
     suffix that can sort either side of the seeded rows, so members
     and resources use created_at as their domain key instead.
+    created_at is compared as a parsed instant, never as a string:
+    runtime-minted rows may carry fractional seconds while every seed
+    row has whole-second precision, so lexicographic comparison is not
+    reliable within the same second.
   GET /api/members:                   [created_at asc, id asc]
   GET /api/resources:                 [created_at asc, id asc]
   GET /api/resources/{id}/requests:   [created_at desc, id asc]

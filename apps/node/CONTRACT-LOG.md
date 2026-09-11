@@ -8,36 +8,42 @@ directly in the task brief (which itself is derived from
 
 ## Questions the contract did not answer
 
-1. **Does decommissioning an already-decommissioned resource conflict?**
-   The contract states 409 for requesting access to a decommissioned
-   resource, and for approve/deny/revoke on a request already past the
-   relevant state, but says nothing about calling decommission twice on
-   the same resource. There is no route or fixture in `seed.json` that
-   exercises this.
+1. **RESOLVED. Does decommissioning an already-decommissioned resource
+   conflict?** Originally a hole: the contract stated 409 for requesting
+   access to a decommissioned resource, and for approve/deny/revoke on a
+   request already past the relevant state, but said nothing about
+   calling decommission twice on the same resource.
 
-   What I did: `MemoryStore.decommissionResource` rejects with
-   `ErrConflict` if `decommission_at` is already set, on the reasoning
-   that this fits the same class of "state transition that does not
-   apply" the contract defines for every other terminal transition
-   (approve/deny/revoke). Confidence: medium. This is an inference from
-   the pattern elsewhere in the contract, not a stated rule, and a
-   reasonable port could instead make decommission idempotent (200,
-   re-stamping or leaving `decommission_at` alone). Task 5's handler
-   should confirm this against however the conformance harness actually
-   exercises it, since the harness is what ultimately arbitrates.
+   What I did at the time: `MemoryStore.decommissionResource` rejected
+   with `ErrConflict` if `decommission_at` was already set, reasoning
+   from the pattern of the other terminal transitions. Confidence:
+   medium, flagged as an inference, not a stated rule.
 
-2. **Does `inviteMember` reject a duplicate email?**
-   Login (`findUserByEmail`) implies email is a lookup key, but nothing
-   in the contract states whether inviting a member with an email that
-   already belongs to another user (same org or a different one) is
-   allowed, or what error it would produce if not.
+   Resolution: checked against the reference app, which returns 200 on
+   both the first and second call. The contract now states this directly
+   on `POST /resources/{id}/decommission` in `openapi.yaml`: idempotent,
+   200, `decommission_at` re-stamped. `MemoryStore.decommissionResource`
+   was changed to match, and a test
+   (`memory.test.ts`, "decommissions idempotently, re-stamping
+   decommission_at") asserts it, proven by mutation (reintroducing the
+   `ErrConflict` throw fails the test, `Unknown Error: Symbol(conflict)`).
+   My original 409 guess was a reasonable reading that happened to
+   diverge from the reference; recording that here as the reason two
+   competent implementations can disagree on a document that is truly
+   silent.
 
-   What I did: `MemoryStore.inviteMember` performs no uniqueness check
-   and always creates a new user. If Task 5 needs one, the correct
-   status code is still an open question (400? 409?) that isn't in the
-   contract's status-code list for `POST /members`, which only documents
-   400/401/403. Confidence: low. I did not implement a check I have no
-   contract basis for.
+2. **RESOLVED. Does `inviteMember` reject a duplicate email?** Originally
+   a hole: nothing in the contract stated whether inviting a member with
+   an email that already belongs to another user was allowed.
+
+   What I did at the time: no uniqueness check, always create a new
+   user. Confidence: low, flagged as unconfirmed.
+
+   Resolution: checked against the reference app, which returns 201 for
+   a duplicate email, including one already belonging to a seeded user.
+   The contract now states this directly on `POST /members` in
+   `openapi.yaml`. My implementation already matched; no code change was
+   needed here, only the contract text and this log entry.
 
 3. **Timestamp precision for runtime-minted rows.**
    Not really a hole: the contract explicitly says only seed rows need
@@ -63,6 +69,12 @@ directly in the task brief (which itself is derived from
    regardless of fractional-second formatting. Confidence: high, this is
    a strictly safer superset of what string comparison gives on the
    fixture data, not a deviation from it.
+
+   ADOPTED INTO THE CONTRACT. This was independently confirmed as a real
+   question an earlier plan had parked from the harness side and never
+   resolved. `x-ordering` in `openapi.yaml` now states explicitly that
+   `created_at` is compared as a parsed instant, never as a string, and
+   why. No code change was needed; `MemoryStore` already did this.
 
 ## What I deliberately did not do
 

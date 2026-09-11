@@ -24,4 +24,13 @@ describe("MemoryStore", () => {
     const rows = await s.listOrgResources("org_acme");
     expect(rows.map((r) => r.id)).toEqual(["r_acme_pg", "r_acme_s3", "r_acme_stripe"]);
   });
+
+  it("decommissions idempotently, re-stamping decommission_at", async () => {
+    const s = new MemoryStore();
+    await s.seed();
+    const first = await s.decommissionResource("org_acme", "r_acme_pg");
+    expect(first.decommission_at).toBeTruthy();
+    const second = await s.decommissionResource("org_acme", "r_acme_pg");
+    expect(second.decommission_at).toBeTruthy();
+  });
 });
