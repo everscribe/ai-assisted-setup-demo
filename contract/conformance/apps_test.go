@@ -19,8 +19,17 @@ func TestDiscoverFindsOnlyResponsiveApps(t *testing.T) {
 	}))
 	defer live.Close()
 
+	// Live TCP connection but a failing health check. This must be
+	// excluded too, and unlike the TCP-refusal case below it actually
+	// exercises the status-code check in discover.
+	unhealthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer unhealthy.Close()
+
 	got := discover(context.Background(), []App{
 		{Name: "live", BaseURL: live.URL},
+		{Name: "unhealthy", BaseURL: unhealthy.URL},
 		{Name: "dead", BaseURL: "http://127.0.0.1:1"},
 	})
 
@@ -56,8 +65,12 @@ func TestClientOmitsActorHeaderWhenEmpty(t *testing.T) {
 	t.Parallel()
 
 	seen := true
+	var gotContentType string
+	var gotBodyLen int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, seen = r.Header["X-User-Id"]
+		gotContentType = r.Header.Get("Content-Type")
+		gotBodyLen = r.ContentLength
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer srv.Close()
@@ -66,4 +79,6 @@ func TestClientOmitsActorHeaderWhenEmpty(t *testing.T) {
 	_, err := c.Do(context.Background(), http.MethodGet, "/api/me", "", "")
 	require.NoError(t, err)
 	require.False(t, seen, "an empty actor must send no X-User-ID header at all")
+	require.Empty(t, gotContentType, "an empty body must send no Content-Type header")
+	require.Zero(t, gotBodyLen, "an empty body must send no body")
 }
