@@ -418,6 +418,44 @@ func TestDeniedRequestCannotBeApproved(t *testing.T) {
 	}
 }
 
+// TestDeniedRequestCannotBeApproved only ever approves a seeded denied
+// request. A guard written as "status is denied" instead of "status is
+// not pending" refuses exactly that case and nothing else, so denied is
+// the one wrong starting state that guard cannot get wrong. This test
+// covers the two it can: approving an already-approved request
+// (re-entry into the same state) and approving a revoked request (a
+// different wrong state, reached by approving then revoking first).
+// Both are additional to TestDeniedRequestCannotBeApproved, which stays
+// as the denied-path check.
+func TestApprovingNonPendingRequestIs409(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			toApproveTwice := mintStripeRequest(t, c, "positive control for approve-is-terminal")
+			approvedOnce := validated(t, c, http.MethodPost, "/api/requests/"+toApproveTwice+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusOK, approvedOnce.Status,
+				"positive control: approving a pending request must work before a 409 on an approved one means anything")
+
+			approvedAgain := validated(t, c, http.MethodPost, "/api/requests/"+toApproveTwice+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusConflict, approvedAgain.Status, "approving an already-approved request")
+
+			toRevokeThenApprove := mintStripeRequest(t, c, "positive control for approve-after-revoke")
+			approvedFirst := validated(t, c, http.MethodPost, "/api/requests/"+toRevokeThenApprove+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusOK, approvedFirst.Status,
+				"positive control: approving a pending request must work before revoking it can mean anything")
+
+			revokedFirst := validated(t, c, http.MethodPost, "/api/requests/"+toRevokeThenApprove+"/revoke", "u_ada", "")
+			require.Equal(t, http.StatusOK, revokedFirst.Status,
+				"positive control: revoking an approved request must work before approving it again can mean anything")
+
+			approvedAfterRevoke := validated(t, c, http.MethodPost, "/api/requests/"+toRevokeThenApprove+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusConflict, approvedAfterRevoke.Status, "approving a revoked request")
+		})
+	}
+}
+
 // Denying a pending request must work before a 409 on the same request,
 // now denied, means anything - the same positive-control shape as
 // TestDeniedRequestCannotBeApproved, but asserting deny's own 409
@@ -425,12 +463,15 @@ func TestDeniedRequestCannotBeApproved(t *testing.T) {
 // reusing a seeded one so this test needs nothing else to have run
 // first.
 //
-// Two wrong states are checked, not one: denying an already-denied
-// request (re-entry into the same state) and denying an approved
-// request (a different wrong state). A guard written as "== denied"
-// instead of "!= pending" passes the first case and fails the second,
-// so a test asserting only re-entry would not have caught it - which is
-// exactly the guard a reviewer found slipping through here.
+// Three wrong states are checked, not one: denying an already-denied
+// request (re-entry into the same state), denying an approved request,
+// and denying a revoked request - the two other states a request can
+// reach that are not pending. A guard written as "== denied" instead of
+// "!= pending" passes the first case and fails the second and third, so
+// a test asserting only re-entry would not have caught it - which is
+// exactly the guard a reviewer found slipping through here. A guard
+// written as an enumeration of wrong states that happens to omit
+// "revoked" would pass the first two cases and fail only the third.
 func TestDenyingNonPendingRequestIs409(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -452,6 +493,18 @@ func TestDenyingNonPendingRequestIs409(t *testing.T) {
 
 			deniedAfterApproved := validated(t, c, http.MethodPost, "/api/requests/"+toDenyTwice+"/deny", "u_ada", "")
 			require.Equal(t, http.StatusConflict, deniedAfterApproved.Status, "denying an approved request")
+
+			toRevokeThenDeny := mintStripeRequest(t, c, "positive control for deny-after-revoke")
+			approvedForRevoke := validated(t, c, http.MethodPost, "/api/requests/"+toRevokeThenDeny+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusOK, approvedForRevoke.Status,
+				"positive control: approving a pending request must work before revoking it can mean anything")
+
+			revokedForDeny := validated(t, c, http.MethodPost, "/api/requests/"+toRevokeThenDeny+"/revoke", "u_ada", "")
+			require.Equal(t, http.StatusOK, revokedForDeny.Status,
+				"positive control: revoking an approved request must work before denying it can mean anything")
+
+			deniedAfterRevoke := validated(t, c, http.MethodPost, "/api/requests/"+toRevokeThenDeny+"/deny", "u_ada", "")
+			require.Equal(t, http.StatusConflict, deniedAfterRevoke.Status, "denying a revoked request")
 		})
 	}
 }
@@ -462,13 +515,16 @@ func TestDenyingNonPendingRequestIs409(t *testing.T) {
 // approved and the first revoke could not be attributed to revoke
 // working correctly either.
 //
-// Two wrong states are checked, not one: revoking an already-revoked
-// request (re-entry into the same state) and revoking a request that
-// was never approved at all (a different wrong state, reached directly
-// from pending with no approve step). A guard written as "== revoked"
-// instead of "!= approved" passes the first case and fails the second,
-// so a test asserting only re-entry would not have caught it - which is
-// exactly the guard a reviewer found slipping through here.
+// Three wrong states are checked, not one: revoking an already-revoked
+// request (re-entry into the same state), revoking a request that was
+// never approved at all (reached directly from pending with no approve
+// step), and revoking a denied request - the two other states a request
+// can reach that are not approved. A guard written as "== revoked"
+// instead of "!= approved" passes the first case and fails the second
+// and third, so a test asserting only re-entry would not have caught it
+// - which is exactly the guard a reviewer found slipping through here.
+// A guard written as an enumeration of wrong states that happens to
+// omit "denied" would pass the first two cases and fail only the third.
 func TestRevokingNonApprovedRequestIs409(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -490,6 +546,14 @@ func TestRevokingNonApprovedRequestIs409(t *testing.T) {
 			neverApproved := mintStripeRequest(t, c, "positive control for revoke-without-approve")
 			revokedWithoutApproval := validated(t, c, http.MethodPost, "/api/requests/"+neverApproved+"/revoke", "u_ada", "")
 			require.Equal(t, http.StatusConflict, revokedWithoutApproval.Status, "revoking a request that was never approved")
+
+			toDenyThenRevoke := mintStripeRequest(t, c, "positive control for revoke-after-deny")
+			deniedFirst := validated(t, c, http.MethodPost, "/api/requests/"+toDenyThenRevoke+"/deny", "u_ada", "")
+			require.Equal(t, http.StatusOK, deniedFirst.Status,
+				"positive control: denying a pending request must work before revoking it can mean anything")
+
+			revokedAfterDenied := validated(t, c, http.MethodPost, "/api/requests/"+toDenyThenRevoke+"/revoke", "u_ada", "")
+			require.Equal(t, http.StatusConflict, revokedAfterDenied.Status, "revoking a denied request")
 		})
 	}
 }

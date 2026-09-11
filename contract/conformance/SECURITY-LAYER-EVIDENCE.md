@@ -130,12 +130,58 @@ After each of the four mutations above, `apps/go` was restored and a
 pristine run confirmed the full suite passes clean before moving to the
 next one.
 
+## Update: the approve guard had the identical blind spot, plus two more found the same way
+
+`TestDeniedRequestCannotBeApproved` only ever approves the seeded denied
+request. This was found by an accidental mutation: while verifying the
+deny/revoke fix above, a find-and-replace on
+`req.Status != models.StatusPending` landed on `ApproveRequest` (line
+317) rather than the intended `DenyRequest` (line 336, the pattern
+appears in both), and the resulting "not caught" result was briefly
+misread as the fix failing before being traced to the wrong line.
+
+Confirmed deliberately at the correct line: `ApproveRequest`'s guard
+changed from `req.Status != models.StatusPending` to
+`req.Status == models.StatusDenied` (line 317). With that guard, pending
+proceeds (correct), denied 409s (correct, and the only case
+`TestDeniedRequestCannotBeApproved` exercises), but approved and revoked
+both proceed when they should 409. The mutation passed the entire suite.
+
+`TestApprovingNonPendingRequestIs409` (new) closes this: approving an
+already-approved request, and approving a revoked request.
+`TestDeniedRequestCannotBeApproved` is unchanged.
+
+| Defect (exact mutation, reviewer-specified line) | Failing test | First line of failure |
+|---|---|---|
+| `ApproveRequest` (line 317): `!= StatusPending` to `== StatusDenied` | `TestApprovingNonPendingRequestIs409` | `Not equal: expected: 409, actual: 200` ("approving an already-approved request") |
+
+`TestDeniedRequestCannotBeApproved` was confirmed still passing throughout
+this mutation, which is the point: it exercises exactly the one branch
+the broken guard still gets right.
+
+Asking the same question of deny and revoke (each already widened once
+above) found one more blind spot in each: neither had ever asked deny to
+touch a revoked request, or revoke to touch a denied request. Both
+closed with a third case per test, proven against the matching
+enumeration-style guard:
+
+| Self-found gap and mutation | Failing test | First line of failure |
+|---|---|---|
+| `DenyRequest`: `!= StatusPending` to `== StatusDenied \|\| == StatusApproved` (omits revoked) | `TestDenyingNonPendingRequestIs409` | `Not equal: expected: 409, actual: 200` ("denying a revoked request") |
+| `RevokeRequest`: `!= StatusApproved` to `== StatusRevoked \|\| == StatusPending` (omits denied) | `TestRevokingNonApprovedRequestIs409` | `Not equal: expected: 409, actual: 200` ("revoking a denied request") |
+
+All three transition routes (approve, deny, revoke) now assert all three
+of their wrong starting states, not two. After each mutation above,
+`apps/go` was restored and a pristine run confirmed the full suite
+passes clean.
+
 ## Run metadata
 
 - Date: 2026-09-11
 - Original ten-defect run against commit: `c13e5cc29ca6b1b4b0af26666e73f556fad9fd00`
 - Seven-gap-closing update run against commit: `4683280d7bddd50cbc369c6e9a87f9f6e4424d17`
 - Wrong-state-widening update run against commit: `94a39b5d2d40a135dc3a75495865a7b2789570c9`
+- Approve-guard-and-two-more update run against commit: `b266442033df83919f38f4ca222e4f8713b523ca`
 - Harness: `cd contract/conformance && go test ./... -count=1`, against
   the Go app alone on `:9001` (`CONFORMANCE_APPS` unset; node, rust, and
   python do not exist yet, so the harness only discovers `go` and skips

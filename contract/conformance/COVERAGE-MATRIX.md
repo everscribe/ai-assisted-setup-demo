@@ -61,9 +61,9 @@ reflects that closed state.
 | 10 | `POST /resources/{id}/decommission` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | N/A - the contract defines no 409 response for this route, and the store has no precondition to violate (see caveat below) |
 | 11 | `GET /resources/{id}/requests` | Covered - `TestMissingActorIs401` | N/A - any member can list | Covered - `TestCrossTenantReadsAre404WithPositiveControls` | N/A - no state transition |
 | 12 | `POST /resources/{id}/requests` | Covered - `TestMissingActorIs401` | N/A - "any organization member can request access" per spec | Covered - `TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls` | Covered - `TestRequestingAccessToDecommissionedResourceIs409` |
-| 13 | `POST /requests/{id}/approve` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | Covered - `TestDeniedRequestCannotBeApproved` |
-| 14 | `POST /requests/{id}/deny` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | Covered - `TestDenyingNonPendingRequestIs409` (asserts both denying an already-denied request and denying an approved request) |
-| 15 | `POST /requests/{id}/revoke` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | Covered - `TestRevokingNonApprovedRequestIs409` (asserts both revoking an already-revoked request and revoking a request that was never approved) |
+| 13 | `POST /requests/{id}/approve` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | Covered - `TestDeniedRequestCannotBeApproved` (approving a denied request) and `TestApprovingNonPendingRequestIs409` (approving an already-approved request and approving a revoked request); all three non-pending states a request can be in are now asserted |
+| 14 | `POST /requests/{id}/deny` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | Covered - `TestDenyingNonPendingRequestIs409` (denying an already-denied request, denying an approved request, and denying a revoked request); all three non-pending states are now asserted |
+| 15 | `POST /requests/{id}/revoke` | Covered - `TestMissingActorIs401` | Covered - `TestMemberCannotUseAdminRoutes` | Covered - `TestCrossTenantWritesAre404WithPositiveControls` | Covered - `TestRevokingNonApprovedRequestIs409` (revoking an already-revoked request, revoking a request that was never approved, and revoking a denied request); all three non-approved states are now asserted |
 | 16 | `GET /requests/{id}/comments` | Covered - `TestMissingActorIs401` | N/A - any member can list | Covered - `TestCrossTenantReadsAre404WithPositiveControls` | N/A - no state transition |
 | 17 | `POST /requests/{id}/comments` | Covered - `TestMissingActorIs401` | N/A - no "admin only" in spec, any member can comment | Covered - `TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls` | N/A - plain insert, no prior state to conflict with |
 | 18 | `GET /health` | N/A - anonymous route (`security: []`) | N/A - no admin gate | N/A - no target id | N/A - no state transition |
@@ -112,6 +112,9 @@ defect that previously passed the whole suite silently.
 - Row 17, 404: covered by the same
   `TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls` as
   row 12.
+- Row 13, 409: `TestDeniedRequestCannotBeApproved` (existing, unchanged)
+  plus `TestApprovingNonPendingRequestIs409` (new; see "Update: the
+  approve guard's blind spot" below).
 
 ## Update: rows 14 and 15's 409 cells were narrower than the grid claimed
 
@@ -139,6 +142,37 @@ The general lesson carried forward: a cell marked Covered by a test whose
 name matches the invariant can still be a test that only proves the
 mutation it was written against. Widening an existing assertion, not just
 adding new rows, is part of what "covered" has to mean here.
+
+## Update: the approve guard's blind spot, and two more found the same way
+
+Row 13's 409 cell relied entirely on `TestDeniedRequestCannotBeApproved`,
+which only ever approves the seeded denied request. A guard written as
+"status is denied" instead of "status is not pending" refuses exactly
+that one wrong state and lets the other two (approved, revoked) through.
+This was found by an accidental mutation during verification (a
+find-and-replace landed on `ApproveRequest`'s guard instead of the
+intended target) and proved deliberately by changing `ApproveRequest`'s
+guard at its known line to `req.Status == models.StatusDenied`: the
+mutation passed the entire suite, `TestDeniedRequestCannotBeApproved`
+included, since that test never asks approve to touch an approved or
+revoked request.
+
+`TestApprovingNonPendingRequestIs409` (new) closes this: approving an
+already-approved request, and approving a revoked request (approve, then
+revoke, then approve again). `TestDeniedRequestCannotBeApproved` is
+unchanged and still covers the denied path.
+
+Once this pattern was named, the same question was asked of deny and
+revoke, which had already been widened once (see the update above) to
+cover two of their three wrong states each. Both had a second blind spot
+left: `TestDenyingNonPendingRequestIs409` never asked deny to touch a
+revoked request, and `TestRevokingNonApprovedRequestIs409` never asked
+revoke to touch a denied request. Both are now closed the same way, with
+a third case added to each test. All three transition routes now assert
+all three of their wrong starting states, not two.
+
+`SECURITY-LAYER-EVIDENCE.md` carries the mutation and failure line for
+the approve defect and for both self-found gaps.
 
 ## Totals
 
