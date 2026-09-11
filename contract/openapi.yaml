@@ -120,6 +120,16 @@ info:
     its outer mux for exactly this reason, because registering only the
     subtree left the mux answering 301 with an HTML body.
 
+    Paths are case sensitive, for the same reason. GET /api/ME is a 404
+    identical to GET /api/no-such-route, never Ada's record, and the
+    rule applies at the mount too: GET /API/me does not reach the API.
+    Without this, a mixed-case probe is an existence oracle - a
+    registered path answers 401 with no actor while an unregistered one
+    answers 404 - which is exactly the leak the trailing-slash rule
+    closes. Axum and FastAPI are case sensitive by default; Express is
+    not, and needs caseSensitive: true on the router and
+    "case sensitive routing" on the app that mounts it.
+
     Every response that has a body, success or error, is
     application/json; charset=utf-8. This includes GET /api/health and
     every 4xx. The two responses that have no body, the 204 from POST

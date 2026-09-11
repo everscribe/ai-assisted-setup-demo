@@ -80,6 +80,58 @@ func TestNullFieldIsEquivalentToOmittingIt(t *testing.T) {
 	}
 }
 
+// A mixed-case spelling of a registered path must be as anonymous as an
+// unknown path. Without this, a mixed-case probe distinguishes a
+// registered path (401 with no actor) from an unregistered one (404),
+// which is the same existence leak the trailing-slash rule closes.
+func TestMixedCasePathIsTheSame404AsAnUnknownPath(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			unknown := validated(t, c, http.MethodGet, "/api/no-such-route", "u_ada", "")
+			require.Equal(t, http.StatusNotFound, unknown.Status)
+
+			for _, path := range []string{"/api/ME", "/api/Members", "/api/RESOURCES"} {
+				// Positive control: the lowercase spelling must work, or
+				// a 404 on the mixed-case one proves nothing.
+				lower := validated(t, c, http.MethodGet, lowercasePath(path), "u_ada", "")
+				require.Equal(t, http.StatusOK, lower.Status, "positive control for %s", path)
+
+				mixed := validated(t, c, http.MethodGet, path, "u_ada", "")
+				require.Equal(t, unknown.Status, mixed.Status, path)
+				require.Equal(t, string(unknown.Body), string(mixed.Body), path)
+
+				// With no actor it must still be a 404, not the 401 a
+				// registered path answers. That is the leak itself.
+				anon := validated(t, c, http.MethodGet, path, "", "")
+				require.Equal(t, http.StatusNotFound, anon.Status,
+					"%s with no actor must not reveal that the path exists", path)
+			}
+
+			// The mount is case sensitive too. Only the status is
+			// asserted: /API/me falls outside the API entirely, onto
+			// whatever serves the SPA, whose 404 body is not JSON and is
+			// not the contract's to specify.
+			outside, err := c.Do(t.Context(), http.MethodGet, "/API/me", "u_ada", "")
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotFound, outside.Status)
+		})
+	}
+}
+
+// lowercasePath lowercases a path for the positive controls above.
+func lowercasePath(p string) string {
+	out := []byte(p)
+	for i, b := range out {
+		if b >= 'A' && b <= 'Z' {
+			out[i] = b + ('a' - 'A')
+		}
+	}
+	return string(out)
+}
+
 // jsonField reads one string field out of a JSON object body.
 func jsonField(t *testing.T, body []byte, key string) string {
 	t.Helper()

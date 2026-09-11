@@ -116,4 +116,25 @@ describe("router", () => {
     expect(comment.body).toEqual({ error: "body required" });
   });
 
+  // A mixed-case spelling of a registered path must be as anonymous as
+  // an unknown one, or it becomes an existence oracle.
+  it("404s a mixed-case path identically to an unknown path", async () => {
+    const unknown = await request(app).get("/api/nope").set("X-User-ID", "u_ada");
+    for (const path of ["/api/ME", "/api/Members", "/api/RESOURCES"]) {
+      const r = await request(app).get(path).set("X-User-ID", "u_ada");
+      expect(r.status, path).toBe(unknown.status);
+      expect(r.body, path).toEqual(unknown.body);
+    }
+  });
+
+  it("404s a mixed-case /api mount", async () => {
+    const r = await request(app).get("/API/me").set("X-User-ID", "u_ada");
+    expect(r.status).toBe(404);
+  });
+
+  it("still reaches the API's own JSON 404 on a bare /api", async () => {
+    const r = await request(app).get("/api").set("X-User-ID", "u_ada");
+    expect(r.status).toBe(404);
+    expect(r.body).toEqual({ error: "not found" });
+  });
 });

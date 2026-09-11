@@ -1,8 +1,10 @@
 // The eighteen routes contract/openapi.yaml declares, and nothing else.
 // strict routing means a trailing slash never matches a registered
-// path (it falls to the 404 below); router.all per path means every
-// method, including HEAD and OPTIONS, reaches our own dispatch instead
-// of Express's built-in HEAD-to-GET or auto-OPTIONS behaviour.
+// path (it falls to the 404 below); case-sensitive routing means /api/ME
+// never matches /api/me, for the same existence-nondisclosure reason;
+// router.all per path means every method, including HEAD and OPTIONS,
+// reaches our own dispatch instead of Express's built-in HEAD-to-GET or
+// auto-OPTIONS behaviour.
 import express, { type Request, type Response, type Router } from "express";
 import * as h from "./handlers.js";
 import { fail } from "./handlers.js";
@@ -40,7 +42,7 @@ const routes: RouteDef[] = [
 ];
 
 export function buildRouter(store: Store): Router {
-  const router = express.Router({ strict: true, caseSensitive: false });
+  const router = express.Router({ strict: true, caseSensitive: true });
 
   // Raw text, every content type, and never parsed here: parsing and
   // validation happen inside each handler, after its auth/role checks,
@@ -61,9 +63,10 @@ export function buildRouter(store: Store): Router {
     });
   }
 
-  // Unknown path, or a trailing slash on a real one (strict routing
-  // means it never matched above): the identical JSON 404 a
-  // cross-tenant miss also produces.
+  // Unknown path, a trailing slash on a real one, or a mixed-case
+  // spelling of one (strict and case-sensitive routing mean neither
+  // matched above): the identical JSON 404 a cross-tenant miss also
+  // produces.
   router.use((_req, res) => {
     fail(res, 404, "not found");
   });

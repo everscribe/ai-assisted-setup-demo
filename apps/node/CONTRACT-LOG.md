@@ -172,6 +172,26 @@ directly in the task brief (which itself is derived from
    harness asserts it against every app, and `router.test.ts` has three
    cases of its own.
 
+8. **RESOLVED. Are paths case sensitive?** Another divergence this app
+   created, and a security one. `express.Router({ caseSensitive: false })`
+   plus Express's case-insensitive mount meant `GET /api/ME` returned
+   Ada's record and `GET /API/me` reached the API at all, where the
+   reference app 404s both. Axum and FastAPI are case sensitive by
+   default, so this app was the outlier of four.
+
+   It also partly defeated the contract's own existence-nondisclosure
+   rule: with no actor, a mixed-case spelling of a registered path
+   answered 401 while an unregistered one answered 404, which is exactly
+   the oracle the trailing-slash rule exists to close.
+
+   Resolution: `caseSensitive: true` on the router, and
+   `app.set("case sensitive routing", true)` on the app so the `/api`
+   mount is case sensitive too. The contract now states the rule beside
+   the trailing-slash rule, since both exist for the same reason.
+   `validation_test.go` asserts a mixed-case path returns the same JSON
+   404 as an unknown path, with a lowercase positive control and a
+   no-actor probe.
+
 ## Read restriction for Task 5
 
 Same as Task 4: I did not open `apps/go/handlers/` or

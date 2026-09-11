@@ -15,6 +15,12 @@ export async function makeApp(): Promise<express.Express> {
 
   const app = express();
   app.disable("x-powered-by");
+  // The mount itself must be case sensitive, or /API/me reaches the API
+  // router and answers as if the path existed. Same reason as the
+  // router's own caseSensitive flag: a mixed-case probe must not be an
+  // existence oracle.
+  app.set("case sensitive routing", true);
+  app.set("strict routing", true);
   app.use("/api", buildRouter(store));
   app.use(express.static(webDist));
 
