@@ -6,16 +6,35 @@ up:
 down:
 	docker compose down
 
+# Readiness polls port 9001 only because apps/go is the only app in
+# docker-compose.yml today. When the node, rust and python ports land on
+# 9002, 9003 and 9004, each needs its own check in the loop below, or
+# verify will start the suite before those apps answer.
+#
+# Teardown runs on every exit path, including a compose failure and a
+# readiness timeout, so a failed verify never leaves containers up.
 verify:
-	docker compose up --build -d
-	@echo "waiting for apps to answer /api/health"
-	@for i in $$(seq 1 30); do \
-	  curl -fsS localhost:9001/api/health >/dev/null 2>&1 && break; \
+	@docker compose up --build -d; up=$$?; \
+	if [ $$up -ne 0 ]; then \
+	  echo "FAIL: docker compose up failed"; \
+	  docker compose down; \
+	  exit $$up; \
+	fi; \
+	echo "waiting for apps to answer /api/health"; \
+	ready=0; \
+	for i in $$(seq 1 30); do \
+	  if curl -fsS localhost:9001/api/health >/dev/null 2>&1; then ready=1; break; fi; \
 	  sleep 1; \
-	done
-	@cd contract/conformance && go test ./... -count=1 -v; status=$$?; \
-	 cd ../.. && docker compose down; \
-	 exit $$status
+	done; \
+	if [ $$ready -ne 1 ]; then \
+	  echo "FAIL: no app answered localhost:9001/api/health within 30s"; \
+	  docker compose logs --tail 50; \
+	  docker compose down; \
+	  exit 1; \
+	fi; \
+	( cd contract/conformance && CONFORMANCE_REQUIRE_APPS=1 go test ./... -count=1 -v ); status=$$?; \
+	docker compose down; \
+	exit $$status
 
 dev-go:
 	cd apps/go/web && pnpm install --frozen-lockfile && pnpm run build

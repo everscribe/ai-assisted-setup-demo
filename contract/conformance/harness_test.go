@@ -2,6 +2,7 @@ package conformance
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -24,12 +25,17 @@ func sharedSpec(t *testing.T) *Spec {
 	return loadedSpec
 }
 
-// apps returns the running apps, skipping the test when none are up so
-// `go test ./...` is green on a machine with nothing running.
+// apps returns the running apps. With nothing up it skips, so
+// `go test ./...` stays green on a machine running no apps. When
+// CONFORMANCE_REQUIRE_APPS is set, which `make verify` does, it fails
+// instead: a run that checked nothing must never report as a pass.
 func apps(t *testing.T) []App {
 	t.Helper()
 	up := Discover(context.Background())
 	if len(up) == 0 {
+		if os.Getenv("CONFORMANCE_REQUIRE_APPS") != "" {
+			t.Fatal("CONFORMANCE_REQUIRE_APPS is set but no app answered /api/health; every live test would have been skipped")
+		}
 		t.Skip("no apps responding on /api/health; run `make up` first")
 	}
 	return up

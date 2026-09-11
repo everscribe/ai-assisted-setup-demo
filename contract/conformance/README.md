@@ -76,6 +76,15 @@ which skips with a clear message when nothing answers `/api/health`.
 `go test ./...` is green on a machine with nothing running; it is not
 proof that anything conforms, only that nothing was checked.
 
+## `CONFORMANCE_REQUIRE_APPS`
+
+Set it (`make verify` sets it to `1`) and `apps(t)` fails instead of
+skipping when nothing answers `/api/health`. That is the belt to the
+readiness loop's braces: in CI an app that builds but crashes at boot
+would otherwise skip every live test and exit 0, which is a guard
+reporting clean having checked nothing. Leave it unset locally so
+`go test ./...` stays green with nothing running.
+
 ## What this harness does not know
 
 It has no idea what Everscribe is. It reads the OpenAPI contract and the
