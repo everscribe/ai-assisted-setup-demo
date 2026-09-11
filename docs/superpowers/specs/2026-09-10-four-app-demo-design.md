@@ -579,7 +579,7 @@ statement is treated as a log that was not kept.
 The statement is the load-bearing half; do not ask for a provenance table
 covering every behaviour. Across eighteen routes, their shapes, statuses,
 ordering and error mapping, that runs to a hundred entries, which is large
-enough to be done perfunctorily, and a perfunctory table is indistinguishable
+enough to be done perfunctorily, and a perfunctory table cannot be told
 from a real one. That is the same weakness this paragraph exists to close.
 The one targeted exception is error-to-status mapping, which the structure
 rule above singles out as the behaviour an implementer is most tempted to
