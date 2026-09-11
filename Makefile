@@ -6,10 +6,9 @@ up:
 down:
 	docker compose down
 
-# Readiness polls port 9001 only because apps/go is the only app in
-# docker-compose.yml today. When the node, rust and python ports land on
-# 9002, 9003 and 9004, each needs its own check in the loop below, or
-# verify will start the suite before those apps answer.
+# Readiness polls every host port docker-compose.yml declares, derived
+# from the file rather than hardcoded, so plans 4 and 5 adding the node,
+# rust and python ports need no edit here.
 #
 # Teardown runs on every exit path, including a compose failure and a
 # readiness timeout, so a failed verify never leaves containers up.
@@ -20,14 +19,19 @@ verify:
 	  docker compose down; \
 	  exit $$up; \
 	fi; \
-	echo "waiting for apps to answer /api/health"; \
+	ports="$$(grep -oE '\"[0-9]{4}:[0-9]{4}\"' docker-compose.yml | cut -d: -f1 | tr -d '\"')"; \
+	echo "waiting for apps to answer /api/health on: $$ports"; \
 	ready=0; \
-	for i in $$(seq 1 30); do \
-	  if curl -fsS localhost:9001/api/health >/dev/null 2>&1; then ready=1; break; fi; \
+	for i in $$(seq 1 60); do \
+	  allup=1; \
+	  for p in $$ports; do \
+	    curl -fsS localhost:$$p/api/health >/dev/null 2>&1 || allup=0; \
+	  done; \
+	  if [ $$allup -eq 1 ]; then ready=1; break; fi; \
 	  sleep 1; \
 	done; \
 	if [ $$ready -ne 1 ]; then \
-	  echo "FAIL: no app answered localhost:9001/api/health within 30s"; \
+	  echo "FAIL: not every app answered /api/health within 60s (ports: $$ports)"; \
 	  docker compose logs --tail 50; \
 	  docker compose down; \
 	  exit 1; \

@@ -130,6 +130,42 @@ func TestCrossTenantWritesAre404WithPositiveControls(t *testing.T) {
 	}
 }
 
+// An acme admin must not be able to touch a globex member. Each is
+// paired with a same-tenant positive control, because a cross-tenant
+// miss and an unregistered route are byte-identical here by design.
+func TestCrossTenantMemberWrites(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			// Positive controls: mint members and act on them in-tenant.
+			// Emails must be unique across the whole suite, so these are
+			// namespaced to this test.
+			victim := inviteMember(t, c, "XT Role Target", "xt-role@acme.test")
+			okRole := validated(t, c, http.MethodPut, "/api/members/"+victim+"/role", "u_ada",
+				`{"role":"admin"}`)
+			require.Equal(t, http.StatusOK, okRole.Status,
+				"positive control: an admin must be able to change an own-tenant member's role")
+
+			doomed := inviteMember(t, c, "XT Delete Target", "xt-delete@acme.test")
+			okDel := validated(t, c, http.MethodDelete, "/api/members/"+doomed, "u_ada", "")
+			require.Equal(t, http.StatusNoContent, okDel.Status,
+				"positive control: an admin must be able to remove an own-tenant member")
+
+			// u_alan is a globex member. u_ada is an acme admin.
+			for _, tc := range []struct{ method, path, body string }{
+				{http.MethodPut, "/api/members/u_alan/role", `{"role":"admin"}`},
+				{http.MethodDelete, "/api/members/u_alan", ""},
+			} {
+				miss := validated(t, c, tc.method, tc.path, "u_ada", tc.body)
+				require.Equal(t, http.StatusNotFound, miss.Status, "%s %s", tc.method, tc.path)
+				require.JSONEq(t, `{"error":"not found"}`, string(miss.Body))
+			}
+		})
+	}
+}
+
 // Every row a list route serves must carry the actor's organization_id.
 // All four list routes are asserted, for an acme actor and a globex
 // actor, so a filter hardcoded to one organization fails here as
