@@ -1,4 +1,4 @@
-.PHONY: up down verify check-clean dev-go
+.PHONY: up down verify check-clean dev-go dev-node
 
 up:
 	docker compose up --build -d
@@ -43,6 +43,10 @@ verify:
 dev-go:
 	cd apps/go/web && pnpm install --frozen-lockfile && pnpm run build
 	cd apps/go && PORT=9001 go run .
+
+dev-node:
+	cd apps/node/web && pnpm install --frozen-lockfile && pnpm run build
+	cd apps/node && pnpm install --frozen-lockfile && PORT=9002 pnpm run dev
 
 check-clean:
 	@files=""; \

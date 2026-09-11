@@ -17,14 +17,15 @@ on their own branches; `main` stays clean.
 
 The plan is to grow this into four apps, one per language, so the setup
 flow can be exercised against a target that is identical in every
-dimension except language and framework. Today only the Go app exists.
+dimension except language and framework. Today the Go and Node apps
+exist.
 
 ## App matrix
 
 | App | Backend | Frontend | Status |
 |---|---|---|---|
 | `apps/go` | Gin | React | available |
-| `apps/node` | Express | Svelte | planned |
+| `apps/node` | Express | Svelte | available |
 | `apps/rust` | Axum | vanilla TS | planned |
 | `apps/python` | FastAPI | Vue | planned |
 
@@ -33,15 +34,20 @@ dimension except language and framework. Today only the Go app exists.
 Requires Go 1.25+ and Node 18+ with `pnpm` (via `corepack enable`).
 
 ```bash
-make dev-go   # build the SPA and run the Go server on :9001
+make dev-go     # build the SPA and run the Go server on :9001
+make dev-node   # build the SPA and run the Node server on :9002
 ```
 
-Open <http://localhost:9001> and sign in as one of the seeded users. For
-hot reload, run the Vite dev server against the API instead:
+Open <http://localhost:9001> (Go) or <http://localhost:9002> (Node) and
+sign in as one of the seeded users. For hot reload, run the Vite dev
+server against the API instead:
 
 ```bash
 cd apps/go && go run .                # Go API on :9001
 cd apps/go/web && pnpm run dev        # Vite dev server, /api proxied
+
+cd apps/node && pnpm run dev          # Node API on :9002
+cd apps/node/web && pnpm run dev      # Vite dev server, /api proxied
 ```
 
 ### With Docker
@@ -53,7 +59,7 @@ make up      # docker compose up --build -d
 make down    # docker compose down
 ```
 
-Then open <http://localhost:9001>.
+Then open <http://localhost:9001> (Go) or <http://localhost:9002> (Node).
 
 ## Pointing the setup flow at a single app
 
