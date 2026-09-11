@@ -88,11 +88,54 @@ All six new tests, plus `TestRequestingAccessToDecommissionedResourceIs409`,
 also pass clean against the restored, pristine app: the full suite ends
 `ok`, zero failures, `apps/go` unmodified.
 
+## Update: the deny and revoke 409 tests were too narrow
+
+A reviewer found that `TestDenyingNonPendingRequestIs409` and
+`TestRevokingNonApprovedRequestIs409`, as written above, only ever
+re-entered the state a request was already in: mint, transition once,
+repeat the same transition. Neither test exercised a transition starting
+from a different wrong state, and the reviewer proved this was
+exploitable with two planted defects, both of which passed the entire
+suite including the test named for that invariant:
+
+- `RevokeRequest`'s guard changed from `req.Status != StatusApproved` to
+  `req.Status == StatusRevoked`. Revoking a freshly minted pending
+  request returned 200.
+- `DenyRequest`'s guard changed from `req.Status != StatusPending` to
+  `req.Status == StatusDenied`. Denying an already-approved request
+  returned 200.
+
+Both tests were widened with an additional case rather than replaced, so
+the original same-state coverage stays in place: the revoke test now
+also revokes a fresh, still-pending request with no approve step at all,
+and the deny test now also approves a fresh request then denies it.
+Reproducing the reviewer's exact two defects against the widened suite:
+
+| Defect (reviewer's exact mutation) | Failing test | First line of failure |
+|---|---|---|
+| `RevokeRequest`: `req.Status != StatusApproved` to `req.Status == StatusRevoked` | `TestRevokingNonApprovedRequestIs409` | `Not equal: expected: 409, actual: 200` ("revoking a request that was never approved") |
+| `DenyRequest`: `req.Status != StatusPending` to `req.Status == StatusDenied` | `TestDenyingNonPendingRequestIs409` | `Not equal: expected: 409, actual: 200` ("denying an approved request") |
+
+Both original same-state mutations (making `DenyRequest` and
+`RevokeRequest` no-ops, the ones this file first recorded for rows 5-6 of
+the ten-defect table's neighbors) were re-run against the widened tests
+to confirm the new cases had not displaced the old coverage:
+
+| Original mutation | Failing test | First line of failure |
+|---|---|---|
+| `DenyRequest` made a no-op | `TestDenyingNonPendingRequestIs409` | `Not equal: expected: 409, actual: 200` ("denying an already-denied request") |
+| `RevokeRequest` made a no-op | `TestRevokingNonApprovedRequestIs409` | `Not equal: expected: 409, actual: 200` ("revoking an already-revoked request") |
+
+After each of the four mutations above, `apps/go` was restored and a
+pristine run confirmed the full suite passes clean before moving to the
+next one.
+
 ## Run metadata
 
 - Date: 2026-09-11
 - Original ten-defect run against commit: `c13e5cc29ca6b1b4b0af26666e73f556fad9fd00`
 - Seven-gap-closing update run against commit: `4683280d7bddd50cbc369c6e9a87f9f6e4424d17`
+- Wrong-state-widening update run against commit: `94a39b5d2d40a135dc3a75495865a7b2789570c9`
 - Harness: `cd contract/conformance && go test ./... -count=1`, against
   the Go app alone on `:9001` (`CONFORMANCE_APPS` unset; node, rust, and
   python do not exist yet, so the harness only discovers `go` and skips
