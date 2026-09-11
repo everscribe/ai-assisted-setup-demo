@@ -54,8 +54,8 @@ func (s *Spec) ValidateResponse(ctx context.Context, method, path string, resp *
 		RequestValidationInput: &openapi3filter.RequestValidationInput{
 			Request: req, PathParams: pathParams, Route: route,
 		},
-		Status: resp.Status,
-		Header: resp.Header,
+		Status:  resp.Status,
+		Header:  resp.Header,
 		Options: &openapi3filter.Options{IncludeResponseStatus: true},
 	}
 	in.SetBodyBytes(resp.Body)

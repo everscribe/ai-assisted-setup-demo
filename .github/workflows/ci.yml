@@ -32,4 +32,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: the harness is gofmt clean
+        run: |
+          unformatted=$(gofmt -l contract/conformance)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      - run: cd contract/conformance && go vet ./...
       - run: make verify
