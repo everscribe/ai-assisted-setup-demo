@@ -26,7 +26,10 @@ app today and against Node, Rust, and Python apps once they exist.
    apps. Equality can't catch a security defect that every app shares:
    if all four apps leaked the same cross-tenant row, layer 2 would
    call that agreement, not a bug. Layer 3 checks each app against a
-   fixed rule instead.
+   fixed rule instead. `seed_test.go` belongs to this layer too: each
+   app carries its own hand-written copy of `contract/seed.json`, and
+   a value wrong the same way in every app would pass layer 2, so the
+   served rows are compared to the seed file field for field.
 
 ## Running it
 
