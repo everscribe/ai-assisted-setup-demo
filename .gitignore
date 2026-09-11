@@ -7,12 +7,16 @@ bin/
 # Node
 apps/*/web/node_modules
 apps/*/web/.vite
+apps/*/node_modules
 
 # Built SPA artefacts. Vite overwrites web/dist on every build.
 # Keep the placeholder index.html in source control so `go build`
 # works before the first build. Ignore the rest.
 apps/*/web/dist/*
 !apps/*/web/dist/index.html
+
+# apps/node builds to dist/ via tsc; nothing needs it in source control.
+apps/node/dist
 
 # Editor / OS
 .DS_Store
@@ -22,3 +26,4 @@ apps/*/web/dist/*
 
 # TypeScript incremental build state.
 apps/*/web/tsconfig.tsbuildinfo
+apps/*/tsconfig.tsbuildinfo
