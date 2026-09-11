@@ -34,6 +34,14 @@ var tsPlaceholder = regexp.MustCompile(`^\$ts\d+$`)
 // the resulting relative order of the tied rows is then not portable
 // across apps, only the set of rows is. Object key order was already
 // deterministic (Normalizer sorts map keys), so only arrays need this.
+//
+// This recurses into nested arrays unconditionally, so a sort here
+// hides order for any array at any depth, not just the top-level list
+// endpoints. No schema in this contract has a nested array today, so
+// that is latent, not live, but a later port adding one would have its
+// order silently unchecked by this test. ordering_test.go's per-app
+// property check is what still catches an ordering bug in a single
+// list; this function's job is only to make two apps' sets comparable.
 func canonicalize(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
