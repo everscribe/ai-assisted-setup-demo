@@ -47,6 +47,9 @@ func (s *Spec) ValidateResponse(ctx context.Context, method, path string, resp *
 	if err != nil {
 		return s.validateUndeclared(method, path, resp, err)
 	}
+	if declaresNoContent(route.Operation, resp.Status) {
+		return validateNoContent(method, path, resp)
+	}
 	in := &openapi3filter.ResponseValidationInput{
 		RequestValidationInput: &openapi3filter.RequestValidationInput{
 			Request: req, PathParams: pathParams, Route: route,
@@ -58,6 +61,33 @@ func (s *Spec) ValidateResponse(ctx context.Context, method, path string, resp *
 	in.SetBodyBytes(resp.Body)
 	if err := openapi3filter.ValidateResponse(ctx, in); err != nil {
 		return fmt.Errorf("%s %s -> %d: %w", method, path, resp.Status, err)
+	}
+	return nil
+}
+
+// declaresNoContent reports whether the operation's response for this
+// status has no content object, meaning the contract promises an empty
+// body regardless of status code (204 today, but not hardcoded to it).
+func declaresNoContent(op *openapi3.Operation, status int) bool {
+	if op == nil || op.Responses == nil {
+		return false
+	}
+	ref := op.Responses.Status(status)
+	if ref == nil || ref.Value == nil {
+		return false
+	}
+	return len(ref.Value.Content) == 0
+}
+
+// validateNoContent enforces the contract's no-content rule directly,
+// since kin-openapi has nothing to check a body or Content-Type against
+// when the response declares no content object.
+func validateNoContent(method, path string, resp *Response) error {
+	if len(resp.Body) != 0 {
+		return fmt.Errorf("%s %s -> %d: response declares no content but body is not empty", method, path, resp.Status)
+	}
+	if resp.Header.Get("Content-Type") != "" {
+		return fmt.Errorf("%s %s -> %d: response declares no content but Content-Type is set", method, path, resp.Status)
 	}
 	return nil
 }

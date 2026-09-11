@@ -83,3 +83,21 @@ func TestValidateResponseAcceptsBodilessNoContent(t *testing.T) {
 	resp := &Response{Status: 204, Header: http.Header{}, Body: nil}
 	require.NoError(t, s.ValidateResponse(context.Background(), http.MethodPost, "/api/logout", resp))
 }
+
+func TestValidateResponseRejectsNoContentWithBody(t *testing.T) {
+	t.Parallel()
+	s := testSpec(t)
+	resp := &Response{Status: 204, Header: http.Header{}, Body: []byte(`{"ok":true}`)}
+	require.Error(t, s.ValidateResponse(context.Background(), http.MethodPost, "/api/logout", resp))
+}
+
+func TestValidateResponseRejectsNoContentWithContentType(t *testing.T) {
+	t.Parallel()
+	s := testSpec(t)
+	resp := &Response{
+		Status: 204,
+		Header: http.Header{"Content-Type": []string{"application/json"}},
+		Body:   nil,
+	}
+	require.Error(t, s.ValidateResponse(context.Background(), http.MethodPost, "/api/logout", resp))
+}
