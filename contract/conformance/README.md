@@ -85,6 +85,26 @@ would otherwise skip every live test and exit 0, which is a guard
 reporting clean having checked nothing. Leave it unset locally so
 `go test ./...` stays green with nothing running.
 
+## `CONFORMANCE_EXPECT_APPS`
+
+`CONFORMANCE_REQUIRE_APPS` only fires when *zero* apps answer. An app
+that is in the roster but missing from `docker-compose.yml` still leaves
+a green run: discovery finds the others, every test passes against them,
+and the missing one is never mentioned. `CONFORMANCE_EXPECT_APPS` names
+how many apps must be found, and `apps(t)` fails when it discovers fewer:
+
+```bash
+CONFORMANCE_EXPECT_APPS=2 go test ./... -count=1
+```
+
+`make verify` sets it from the number of host ports `docker-compose.yml`
+declares, the same file and the same derivation the readiness loop uses,
+so adding an app to compose raises the bar automatically. Setting it in
+the environment overrides the derived value, which is how the guard
+itself is exercised: remove a service from compose, keep the old count,
+and `make verify` must fail. Leave it unset locally so `go test ./...`
+keeps skipping with nothing running.
+
 ## What this harness does not know
 
 It has no idea what Everscribe is. It reads the OpenAPI contract and the

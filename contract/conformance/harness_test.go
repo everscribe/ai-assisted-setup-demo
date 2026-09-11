@@ -2,8 +2,11 @@ package conformance
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -29,9 +32,23 @@ func sharedSpec(t *testing.T) *Spec {
 // `go test ./...` stays green on a machine running no apps. When
 // CONFORMANCE_REQUIRE_APPS is set, which `make verify` does, it fails
 // instead: a run that checked nothing must never report as a pass.
+//
+// CONFORMANCE_EXPECT_APPS goes further and names how many apps the
+// caller knows should be there. `make verify` derives it from
+// docker-compose.yml, the same file the readiness loop derives its ports
+// from. Without it, an app present in the roster but absent from compose
+// is silently never tested and verify still exits 0, because discovery
+// only fails when every app is missing.
 func apps(t *testing.T) []App {
 	t.Helper()
 	up := Discover(context.Background())
+
+	if want := expectedApps(t); want > len(up) {
+		t.Fatalf("CONFORMANCE_EXPECT_APPS=%d but only %d app(s) answered /api/health (%s); "+
+			"an app in the roster that never started would otherwise be silently untested",
+			want, len(up), names(up))
+	}
+
 	if len(up) == 0 {
 		if os.Getenv("CONFORMANCE_REQUIRE_APPS") != "" {
 			t.Fatal("CONFORMANCE_REQUIRE_APPS is set but no app answered /api/health; every live test would have been skipped")
@@ -39,6 +56,41 @@ func apps(t *testing.T) []App {
 		t.Skip("no apps responding on /api/health; run `make up` first")
 	}
 	return up
+}
+
+// expectedApps reads CONFORMANCE_EXPECT_APPS. Unset or empty means no
+// expectation, which is what keeps a bare `go test ./...` skipping
+// rather than failing. A value that is not a positive integer is fatal:
+// a typo must not quietly disable the guard.
+func expectedApps(t *testing.T) int {
+	t.Helper()
+	want, err := parseExpectedApps(os.Getenv("CONFORMANCE_EXPECT_APPS"))
+	require.NoError(t, err)
+	return want
+}
+
+func parseExpectedApps(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("CONFORMANCE_EXPECT_APPS must be a positive integer, got %q", raw)
+	}
+	return n, nil
+}
+
+// names renders the discovered apps for a failure message.
+func names(up []App) string {
+	if len(up) == 0 {
+		return "none"
+	}
+	out := make([]string, 0, len(up))
+	for _, a := range up {
+		out = append(out, a.Name)
+	}
+	return strings.Join(out, ", ")
 }
 
 // validated performs a request and schema-checks the response. Every

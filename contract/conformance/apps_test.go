@@ -82,3 +82,34 @@ func TestClientOmitsActorHeaderWhenEmpty(t *testing.T) {
 	require.Empty(t, gotContentType, "an empty body must send no Content-Type header")
 	require.Zero(t, gotBodyLen, "an empty body must send no body")
 }
+
+// The expectation guard is what makes `make verify` fail on an app that
+// is in the roster but never started. Its parser is pinned here: unset
+// means no expectation (a bare `go test ./...` must still skip), and a
+// malformed value is an error rather than a silently disabled guard.
+func TestParseExpectedApps(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		raw     string
+		want    int
+		wantErr bool
+	}{
+		{raw: "", want: 0},
+		{raw: "   ", want: 0},
+		{raw: "1", want: 1},
+		{raw: " 4 ", want: 4},
+		{raw: "0", wantErr: true},
+		{raw: "-1", wantErr: true},
+		{raw: "two", wantErr: true},
+		{raw: "2.5", wantErr: true},
+	} {
+		got, err := parseExpectedApps(tc.raw)
+		if tc.wantErr {
+			require.Error(t, err, "%q", tc.raw)
+			continue
+		}
+		require.NoError(t, err, "%q", tc.raw)
+		require.Equal(t, tc.want, got, "%q", tc.raw)
+	}
+}

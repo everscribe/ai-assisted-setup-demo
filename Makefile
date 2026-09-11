@@ -10,6 +10,13 @@ down:
 # from the file rather than hardcoded, so plans 4 and 5 adding the node,
 # rust and python ports need no edit here.
 #
+# The same derivation gives the harness the number of apps it should
+# find, as CONFORMANCE_EXPECT_APPS. Without it the harness only fails
+# when zero apps answer, so an app the roster lists but compose never
+# starts is silently untested and verify still exits 0. Set the variable
+# in the environment to override the derived count, which is how the
+# guard itself is exercised.
+#
 # Teardown runs on every exit path, including a compose failure and a
 # readiness timeout, so a failed verify never leaves containers up.
 verify:
@@ -36,7 +43,10 @@ verify:
 	  docker compose down; \
 	  exit 1; \
 	fi; \
-	( cd contract/conformance && CONFORMANCE_REQUIRE_APPS=1 go test ./... -count=1 -v ); status=$$?; \
+	expect="$${CONFORMANCE_EXPECT_APPS:-$$(echo "$$ports" | wc -w | tr -d ' ')}"; \
+	echo "expecting $$expect app(s) to answer the conformance suite"; \
+	( cd contract/conformance && CONFORMANCE_REQUIRE_APPS=1 CONFORMANCE_EXPECT_APPS=$$expect \
+	  go test ./... -count=1 -v ); status=$$?; \
 	docker compose down; \
 	exit $$status
 
