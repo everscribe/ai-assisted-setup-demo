@@ -23,7 +23,11 @@ import (
 //     runtime comments use time.Now() (September 2026), so under the
 //     declared ascending order the seeded three remain the prefix.
 //  2. The lifecycle's new access request goes to r_acme_s3, not r_acme_pg,
-//     so the requests fixture on r_acme_pg is untouched by any prior test.
+//     and no test in this package mints requests against r_acme_pg either,
+//     so the requests fixture on r_acme_pg stays untouched by any prior
+//     test. Anything that starts minting there breaks this fixture on a
+//     second run against the same app, since a fresh request sorts ahead
+//     of the seeded March 2026 pair under the declared descending order.
 func TestSeededListsMatchTheDeclaredOrder(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

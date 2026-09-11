@@ -129,11 +129,14 @@ func TestMemberCannotUseAdminRoutes(t *testing.T) {
 			// Fresh pending requests, minted here rather than reused, so
 			// approving/denying them for the positive controls below
 			// cannot collide with a lifecycle test elsewhere that also
-			// mutates req_acme_1.
-			toApprove := validated(t, c, http.MethodPost, "/api/resources/r_acme_pg/requests",
+			// mutates req_acme_1. Minted against r_acme_stripe, not
+			// r_acme_pg: ordering_test.go pins the served order of
+			// r_acme_pg's requests, and a minted request here would
+			// pollute that fixture on a second run against the same app.
+			toApprove := validated(t, c, http.MethodPost, "/api/resources/r_acme_stripe/requests",
 				"u_linus", `{"reason":"positive control for approve"}`)
 			require.Equal(t, http.StatusCreated, toApprove.Status)
-			toDeny := validated(t, c, http.MethodPost, "/api/resources/r_acme_pg/requests",
+			toDeny := validated(t, c, http.MethodPost, "/api/resources/r_acme_stripe/requests",
 				"u_linus", `{"reason":"positive control for deny"}`)
 			require.Equal(t, http.StatusCreated, toDeny.Status)
 
@@ -169,13 +172,15 @@ func TestMemberCannotUseAdminRoutes(t *testing.T) {
 // approve is broken outright. The fresh request is minted here rather
 // than reusing req_acme_1, which a later task's lifecycle sequence also
 // mutates and would not reliably be pending by the time this test runs.
+// Minted against r_acme_stripe: see the note in TestMemberCannotUseAdminRoutes
+// on why r_acme_pg is off limits for minting.
 func TestDeniedRequestCannotBeApproved(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
 		t.Run(app.Name, func(t *testing.T) {
 			c := NewClient(app)
 
-			pending := validated(t, c, http.MethodPost, "/api/resources/r_acme_pg/requests",
+			pending := validated(t, c, http.MethodPost, "/api/resources/r_acme_stripe/requests",
 				"u_linus", `{"reason":"positive control for denied-is-terminal"}`)
 			require.Equal(t, http.StatusCreated, pending.Status)
 
