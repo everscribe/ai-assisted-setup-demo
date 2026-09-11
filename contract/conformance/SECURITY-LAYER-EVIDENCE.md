@@ -23,48 +23,76 @@ status --porcelain apps/go` is empty.
 | 3 | Dropped the org filter in `ListOrgResources` | `TestListRoutesServeOnlyTheActorsOrganization` | `Not equal: expected: "org_acme", actual: "org_globex"` |
 | 4 | Dropped the org filter in `ListOrgMembers` | `TestListRoutesServeOnlyTheActorsOrganization` | `Not equal: expected: "org_acme", actual: "org_globex"` |
 | 5 | Made `ApproveRequest` a no-op returning the unchanged row | `TestMemberCannotUseAdminRoutes` | `Not equal: expected: 200, actual: 409` ("admin must be able to revoke an approved request") |
-| 6 | Made `DecommissionResource` a no-op | **none. See "Open hole" below.** | n/a |
+| 6 | Made `DecommissionResource` a no-op | `TestRequestingAccessToDecommissionedResourceIs409` (added after this row was first an open hole; see "Update" below) | `Not equal: expected: 409, actual: 201` |
 | 7 | Removed `requireActor` from `POST /api/requests/{id}/revoke` | `TestMissingActorIs401` | `Not equal: expected: 401, actual: 403` (`POST /api/requests/req_acme_1/revoke`) |
 | 8 | Removed `requireAdmin` from `POST /api/resources/{id}/decommission` | `TestMemberCannotUseAdminRoutes` | `Not equal: expected: 403, actual: 200` (`u_linus: POST /api/resources/{id}/decommission`) |
 | 9 | Seeded `req_acme_1` as `approved` | `TestLifecycleRunsCleanAgainstEveryApp` (the `requirePristine` guard it runs first) | `Not equal: expected: "pending", actual: "approved"` ("req_acme_1 must start pending.") |
 | 10 | Seeded `r_acme_s3` with a decommission timestamp | `TestLifecycleRunsCleanAgainstEveryApp` (the `requirePristine` guard it runs first) | `Expected nil, but got: "2026-03-14T10:00:00Z"` ("r_acme_s3 must start live.") |
 
-9 of 10 planted defects were caught. Row 6 was not.
+10 of 10 planted defects are now caught. Row 6 was the exception on first
+run; see "Update" below for how it was closed.
 
-## Open hole: defect 6 produced no failure
+## Update: the row 6 open hole is closed
 
-Making `DecommissionResource` a no-op (the resource is found, ownership is
-checked, but `decommission_at` is never set and the unchanged row is
-returned with 200) passed the entire suite: `go test ./... -count=1`
-reported `ok`, zero failures, on both the mutated run and the restored
-pristine re-check.
+The first version of this file recorded that making `DecommissionResource`
+a no-op (the resource is found, ownership is checked, but
+`decommission_at` is never set and the unchanged row is returned with
+200) passed the entire suite with zero failures. It was reported as an
+open hole rather than silently dropped, naming the missing test as one
+that requests access to a resource immediately after decommissioning it
+and asserts 409.
 
-Every existing test that touches decommission only checks the HTTP status
-code of the decommission call itself (200 for an admin, 403 for a member,
-404 cross-tenant), never that the resource was actually marked
-decommissioned. Nothing then re-reads the resource to check
-`decommission_at`, and nothing requests access to a freshly-decommissioned
-resource to confirm the 409 the contract promises
-("`POST /api/resources/{id}/requests` ... Fails with 409 if the resource
-has been decommissioned"). That second gap is not incidental: the
-coverage matrix (`contract/conformance/COVERAGE-MATRIX.md`) independently
-finds `POST /api/resources/{id}/requests` x "409 for an invalid state
-transition" as NOT COVERED, and this is exactly the defect that gap lets
-through.
+That test now exists: `TestRequestingAccessToDecommissionedResourceIs409`
+registers a resource, requests access to it while live (positive
+control, expects 201), decommissions it, then requests access again and
+asserts 409. Re-running the same `DecommissionResource` no-op mutation
+against the app with this test in place fails exactly there:
 
-The test that should have caught this does not exist yet. The fix is not
-a new assertion added quietly here; it belongs to closing the matrix's
-NOT COVERED cell for `POST /api/resources/{id}/requests` under the 409
-column, most directly by requesting access to a resource immediately
-after decommissioning it and asserting 409, and secondarily by asserting
-`decommission_at` is non-null on the decommission response itself. Per
-this task's scope, no such test is added here; it is reported as an open
-hole for a deliberate decision, not silently patched.
+```
+security_test.go:498:
+    Error: Not equal:
+           expected: 409
+           actual  : 201
+Test: TestRequestingAccessToDecommissionedResourceIs409/go
+```
+
+This also closed the matching gap in `COVERAGE-MATRIX.md`: `POST
+/api/resources/{id}/requests` x "409 for an invalid state transition" was
+NOT COVERED, and it was the same missing check that let the no-op through.
+
+## Update: six more NOT COVERED cells closed
+
+A reviewer separately found four routes with a role-gate test but no
+tenant-boundary test: `POST /requests/{id}/deny`, `POST
+/requests/{id}/revoke`, `POST /resources/{id}/requests`, and `POST
+/requests/{id}/comments`. Combined with the two missing 409 tests for
+deny and revoke, this made seven NOT COVERED cells in the coverage
+matrix (the resource-requests 409 cell above already counted as the
+eighth, now first, gap closed).
+
+Each new or extended test was proven able to fail before being trusted,
+the same way as the ten defects above: planted the matching mutation on
+a scratch run of `apps/go`, ran the harness, recorded the failure,
+restored, confirmed clean.
+
+| Gap closed | New/extended test | Mutation planted to prove it fails | First line of failure |
+|---|---|---|---|
+| `POST /requests/{id}/deny`, 404 cross-tenant | `TestCrossTenantWritesAre404WithPositiveControls` (extended) | Dropped the org filter in `DenyRequest` | `Not equal: expected: 404, actual: 200` |
+| `POST /requests/{id}/revoke`, 404 cross-tenant | `TestCrossTenantWritesAre404WithPositiveControls` (extended) | Dropped the org filter in `RevokeRequest` | `Not equal: expected: 404, actual: 200` |
+| `POST /resources/{id}/requests`, 404 cross-tenant | `TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls` (new) | Dropped the org filter in `RequestAccess` | `Not equal: expected: 404, actual: 201` |
+| `POST /requests/{id}/comments`, 404 cross-tenant | `TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls` (new) | Dropped the org filter in `AddComment` | `Not equal: expected: 404, actual: 201` (`POST /api/requests/req_globex_1/comments`) |
+| `POST /requests/{id}/deny`, 409 invalid transition | `TestDenyingNonPendingRequestIs409` (new) | Made `DenyRequest` a no-op returning the unchanged row | `Not equal: expected: 409, actual: 200` |
+| `POST /requests/{id}/revoke`, 409 invalid transition | `TestRevokingNonApprovedRequestIs409` (new) | Made `RevokeRequest` a no-op returning the unchanged row | `Not equal: expected: 409, actual: 200` |
+
+All six new tests, plus `TestRequestingAccessToDecommissionedResourceIs409`,
+also pass clean against the restored, pristine app: the full suite ends
+`ok`, zero failures, `apps/go` unmodified.
 
 ## Run metadata
 
 - Date: 2026-09-11
-- Run against commit: `c13e5cc29ca6b1b4b0af26666e73f556fad9fd00`
+- Original ten-defect run against commit: `c13e5cc29ca6b1b4b0af26666e73f556fad9fd00`
+- Seven-gap-closing update run against commit: `4683280d7bddd50cbc369c6e9a87f9f6e4424d17`
 - Harness: `cd contract/conformance && go test ./... -count=1`, against
   the Go app alone on `:9001` (`CONFORMANCE_APPS` unset; node, rust, and
   python do not exist yet, so the harness only discovers `go` and skips

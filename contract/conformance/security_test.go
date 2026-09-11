@@ -100,8 +100,14 @@ func TestCrossTenantAndUnknownPathAreIndistinguishable(t *testing.T) {
 // design, so without the control the assertion passes on a route that
 // does not exist at all.
 //
-// Both controls are minted here. Decommissioning or approving a seeded
-// acme row would disturb fixtures other tests pin.
+// Deny and revoke are included alongside decommission and approve: all
+// four are admin-only mutations on a single id-named object, and all
+// four were found missing a cross-tenant control in the same review that
+// found decommission and approve already covered here.
+//
+// Every fixture the controls consume is minted here. Decommissioning or
+// approving/denying/revoking a seeded acme row would disturb fixtures
+// other tests pin.
 func TestCrossTenantWritesAre404WithPositiveControls(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -118,12 +124,65 @@ func TestCrossTenantWritesAre404WithPositiveControls(t *testing.T) {
 			require.Equal(t, http.StatusOK, approved.Status,
 				"positive control: an admin must be able to approve an own-tenant request")
 
+			toDeny := mintStripeRequest(t, c, "cross-tenant control for deny")
+			denied := validated(t, c, http.MethodPost, "/api/requests/"+toDeny+"/deny", "u_ada", "")
+			require.Equal(t, http.StatusOK, denied.Status,
+				"positive control: an admin must be able to deny an own-tenant request")
+
+			toRevoke := mintStripeRequest(t, c, "cross-tenant control for revoke")
+			approvedForRevoke := validated(t, c, http.MethodPost, "/api/requests/"+toRevoke+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusOK, approvedForRevoke.Status)
+			revoked := validated(t, c, http.MethodPost, "/api/requests/"+toRevoke+"/revoke", "u_ada", "")
+			require.Equal(t, http.StatusOK, revoked.Status,
+				"positive control: an admin must be able to revoke an own-tenant request")
+
 			for _, path := range []string{
 				"/api/resources/r_globex_k8s/decommission",
 				"/api/requests/req_globex_1/approve",
+				"/api/requests/req_globex_1/deny",
+				"/api/requests/req_globex_1/revoke",
 			} {
 				miss := validated(t, c, http.MethodPost, path, "u_ada", "")
 				require.Equal(t, http.StatusNotFound, miss.Status, path)
+				require.JSONEq(t, `{"error":"not found"}`, string(miss.Body))
+			}
+		})
+	}
+}
+
+// The organization filter runs before the store's state check on every
+// mutation here, so a cross-tenant deny/revoke 404s regardless of the
+// target's real status: req_globex_1 is seeded approved and is never
+// denied or revoked by this test, only probed.
+//
+// The two member-initiated write routes - requesting access and
+// commenting - are neither admin-gated nor id-of-a-user routes, so they
+// do not fit TestCrossTenantWritesAre404WithPositiveControls or
+// TestCrossTenantMemberWrites. Each acts as u_linus, an ordinary acme
+// member, against a globex target.
+func TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			okRequest := validated(t, c, http.MethodPost, "/api/resources/r_acme_stripe/requests", "u_linus",
+				`{"reason":"positive control for cross-tenant request access"}`)
+			require.Equal(t, http.StatusCreated, okRequest.Status,
+				"positive control: a member must be able to request access to an own-tenant resource")
+
+			commentTarget := mintStripeRequest(t, c, "target for cross-tenant comment control")
+			okComment := validated(t, c, http.MethodPost, "/api/requests/"+commentTarget+"/comments", "u_linus",
+				`{"body":"positive control for cross-tenant comment"}`)
+			require.Equal(t, http.StatusCreated, okComment.Status,
+				"positive control: a member must be able to comment on an own-tenant request")
+
+			for _, tc := range []struct{ method, path, body string }{
+				{http.MethodPost, "/api/resources/r_globex_k8s/requests", `{"reason":"cross-tenant probe"}`},
+				{http.MethodPost, "/api/requests/req_globex_1/comments", `{"body":"cross-tenant probe"}`},
+			} {
+				miss := validated(t, c, tc.method, tc.path, "u_linus", tc.body)
+				require.Equal(t, http.StatusNotFound, miss.Status, "%s %s", tc.method, tc.path)
 				require.JSONEq(t, `{"error":"not found"}`, string(miss.Body))
 			}
 		})
@@ -354,6 +413,88 @@ func TestDeniedRequestCannotBeApproved(t *testing.T) {
 				"positive control: approving a pending request must work before a 409 on a denied one means anything")
 
 			resp := validated(t, c, http.MethodPost, "/api/requests/req_acme_3/approve", "u_ada", "")
+			require.Equal(t, http.StatusConflict, resp.Status)
+		})
+	}
+}
+
+// Denying a pending request must work before a 409 on the same request,
+// now denied, means anything - the same positive-control shape as
+// TestDeniedRequestCannotBeApproved, but asserting deny's own 409
+// instead of leaning on approve's. A fresh request is minted rather than
+// reusing a seeded one so this test needs nothing else to have run
+// first.
+func TestDenyingNonPendingRequestIs409(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			pending := mintStripeRequest(t, c, "positive control for deny-is-terminal")
+			denied := validated(t, c, http.MethodPost, "/api/requests/"+pending+"/deny", "u_ada", "")
+			require.Equal(t, http.StatusOK, denied.Status,
+				"positive control: denying a pending request must work before a 409 on a denied one means anything")
+
+			resp := validated(t, c, http.MethodPost, "/api/requests/"+pending+"/deny", "u_ada", "")
+			require.Equal(t, http.StatusConflict, resp.Status)
+		})
+	}
+}
+
+// Revoking an approved request must work before a second revoke on the
+// same, now-revoked request 409s. Approving it first is also a positive
+// control: without a working approve, the request would never reach
+// approved and the first revoke could not be attributed to revoke
+// working correctly either.
+func TestRevokingNonApprovedRequestIs409(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			pending := mintStripeRequest(t, c, "positive control for revoke-is-terminal")
+			approved := validated(t, c, http.MethodPost, "/api/requests/"+pending+"/approve", "u_ada", "")
+			require.Equal(t, http.StatusOK, approved.Status,
+				"positive control: approving a pending request must work before revoking it can mean anything")
+
+			revoked := validated(t, c, http.MethodPost, "/api/requests/"+pending+"/revoke", "u_ada", "")
+			require.Equal(t, http.StatusOK, revoked.Status,
+				"positive control: revoking an approved request must work before a 409 on a revoked one means anything")
+
+			resp := validated(t, c, http.MethodPost, "/api/requests/"+pending+"/revoke", "u_ada", "")
+			require.Equal(t, http.StatusConflict, resp.Status)
+		})
+	}
+}
+
+// This is the test named in COVERAGE-MATRIX.md's NOT COVERED list whose
+// absence let a no-op DecommissionResource pass the whole suite: nothing
+// previously checked that decommissioning a resource actually changes
+// its state, only that the decommission call itself returned 200. The
+// positive control here (requesting access to the resource while it is
+// still live) is what makes the 409 afterward mean "decommission took
+// effect" rather than "this route always 409s" - and it is also exactly
+// the check that fails if DecommissionResource is neutered back into a
+// no-op, since a resource whose decommission_at was never set keeps
+// accepting new requests instead of rejecting them.
+func TestRequestingAccessToDecommissionedResourceIs409(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			resource := registerResource(t, c, "decommission-conflict-resource")
+
+			live := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/requests", "u_linus",
+				`{"reason":"positive control before decommissioning"}`)
+			require.Equal(t, http.StatusCreated, live.Status,
+				"positive control: requesting access to a live resource must work before decommissioning it can mean anything")
+
+			decommissioned := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/decommission", "u_ada", "")
+			require.Equal(t, http.StatusOK, decommissioned.Status)
+
+			resp := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/requests", "u_linus",
+				`{"reason":"should be refused, the resource is decommissioned"}`)
 			require.Equal(t, http.StatusConflict, resp.Status)
 		})
 	}
