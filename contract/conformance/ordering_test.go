@@ -53,6 +53,10 @@ func TestSeededListsMatchTheDeclaredOrder(t *testing.T) {
 				for _, r := range rows {
 					got = append(got, r.ID)
 				}
+				// Guard the slice: an app serving fewer rows than the
+				// fixture is an app defect, not a harness panic.
+				require.GreaterOrEqual(t, len(got), len(tc.want),
+					"%s: served %d rows, fixture needs %d", tc.path, len(got), len(tc.want))
 				require.Equal(t, tc.want, got[:len(tc.want)], "%s: declared order violated", tc.path)
 			}
 		})
