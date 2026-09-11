@@ -76,6 +76,54 @@ directly in the task brief (which itself is derived from
    `created_at` is compared as a parsed instant, never as a string, and
    why. No code change was needed; `MemoryStore` already did this.
 
+5. **Task 5. Does a missing `role` on `PUT /members/{id}/role` get the
+   same message as a mismatched one?** The contract states role there
+   is "compared exactly," gives one worked example (`" admin "` is 400
+   `{"error": "role must be admin or member"}`), but never separately
+   addresses a request body that omits `role` entirely. Every other
+   required-field route in the contract gets a distinct "X required"
+   message for an absent field, which could argue for a
+   `{"error": "role required"}` message here instead when the key is
+   missing outright.
+
+   What I did: treated "compared exactly" as the whole rule, not just
+   the trimming half of it. `PUT /members/{id}/role` does one equality
+   check (`role !== "admin" && role !== "member"`), so a missing key,
+   a wrong type, and a mismatched string all fail it identically and
+   get `{"error": "role must be admin or member"}`. I did not read
+   `apps/go/handlers/members.go` to check the Go app's actual message
+   for this case, per the read restriction for this task. Confidence:
+   medium. This reads more naturally to me as one check, not two, but
+   it is an inference from the framing of a single worked example, not
+   a rule the contract states for the missing-key case specifically.
+
+## Read restriction for Task 5
+
+Same as Task 4: I did not open `apps/go/handlers/` or
+`apps/go/store/memory/` while writing `handlers.ts`, `router.ts`, or
+`main.ts`. Every status code, body shape, trimming rule, and precedence
+rule in those three files comes from `contract/openapi.yaml` and
+`contract/seed.json`. The one exception, permitted by the task brief,
+is `apps/go/store/store.go` (read in Task 4) and the file layout of
+`apps/go`, neither of which describes HTTP behaviour.
+
+The full conformance harness (`CONFORMANCE_APPS="node=http://localhost:9002"
+go test ./... -count=1 -v` from `contract/conformance`) passed against
+this app on the first run against a freshly started process, with no
+handler or contract changes needed beyond the revoke-description fix
+below. That is the strongest evidence the contract held up: eighteen
+routes, written blind to the Go implementation, matched its observable
+behaviour on every check the harness makes.
+
+## Contract text fix (not a hole)
+
+`POST /api/requests/{id}/revoke`'s description ended with "for example
+approving an already-denied request is 409 the same way," an example
+about approving sitting in the revoke operation's own text. Changed the
+example to be about revoking (an already-revoked request), since this
+sentence, not the Go source, is what a port author reads. The rule
+itself (409 if the request is not currently approved) was not touched.
+
 ## What I deliberately did not do
 
 - Did not add a `role`/status literal union type to `models.ts`; kept
@@ -89,3 +137,20 @@ directly in the task brief (which itself is derived from
   that `ErrForbidden` is exported for handlers (Task 5) to use directly
   around the role check that the contract requires happen before body
   parsing; no store method takes an actor or a role to check against.
+- Task 5: did not use `express.json()` as global body-parsing
+  middleware, even though that is idiomatic Express. The contract is
+  explicit that a malformed body on an admin route must lose to the 403
+  admin check, and Express's own body parsers throw before a route
+  handler ever runs, which would answer 400 first. Used
+  `express.text({ type: () => true })` instead to buffer the raw body
+  as a string with no validation, then parse and validate it by hand
+  inside each handler, strictly after `requireActor`/`requireAdmin`.
+- Task 5: registered every path with `router.all(path, ...)` and
+  dispatched on `req.method` by hand, rather than `router.get`/`.post`.
+  Express's `Route` type auto-routes HEAD to a GET handler, and Express
+  auto-answers OPTIONS with a 200 Allow list, when nothing else claims
+  the method; the contract requires 405 for both on every path. `.all`
+  claims every method itself, including HEAD and OPTIONS, so neither of
+  those framework defaults gets a chance to run. Verified by hand with
+  curl against a running instance (`HEAD` and `OPTIONS
+  /api/health` both 405, not 200) before trusting it to the harness.

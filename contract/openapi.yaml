@@ -456,7 +456,7 @@ paths:
       summary: Revoke a previously approved request
       description: >
         Admin only. Fails with 409 if the request is not currently
-        approved, for example approving an already-denied request is
+        approved, for example revoking an already-revoked request is
         409 the same way.
       parameters:
         - $ref: '#/components/parameters/RequestId'
