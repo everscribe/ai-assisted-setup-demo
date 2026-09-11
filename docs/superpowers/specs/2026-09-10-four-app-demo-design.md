@@ -502,9 +502,11 @@ three ports get written from the contract and a contract change is cheap
 only until then: the ordering
 redeclaration above; cross-tenant controls for `DELETE /api/members/{id}`
 and `PUT /api/members/{id}/role`, without which an acme admin can delete a
-globex member and promote them with the suite green; exact status
-assertions on the lifecycle's approve, revoke, and decommission steps, whose
-absence makes the seed test's two exemptions exploitable; the readiness
+globex member and promote them with the suite green; a precondition guard
+asserting that the two rows the seed test exempts start unmutated, whose
+absence makes those exemptions exploitable (exact statuses on the lifecycle
+steps themselves would not work, because the lifecycle is replayed twice in
+one run and approve and revoke are not idempotent); the readiness
 loop gaining ports 9002 to 9004; and, fifth, proving the security layer
 fails.
 
