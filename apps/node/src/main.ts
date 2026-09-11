@@ -1,4 +1,4 @@
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import express from "express";
 import { MemoryStore } from "./memory.js";
@@ -27,7 +27,11 @@ export async function makeApp(): Promise<express.Express> {
   return app;
 }
 
-const isMain = process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`;
+// pathToFileURL, not string interpolation: a path containing a space
+// or any other character that has to be percent-encoded would never
+// match, and the process would start, listen on nothing, and exit 0.
+const isMain =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const port = Number(process.env.PORT ?? 9002);
   const app = await makeApp();
