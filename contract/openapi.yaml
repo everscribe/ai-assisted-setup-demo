@@ -64,6 +64,18 @@ info:
     sensitivity are trimmed but not required; an omitted or empty
     sensitivity becomes "internal".
 
+    A JSON null is equivalent to omitting the field. It is never a type
+    error. On an optional field, null takes that field's documented
+    default, so {"role": null} on POST /api/members creates a member and
+    {"sensitivity": null} on POST /api/resources stores "internal". On a
+    required field, null is a missing field, so {"name": null} on POST
+    /api/members is {"error": "name and email required"} with a 400, not
+    a schema complaint. Any other wrong type, a number or an object
+    where a string is declared, is a 400. This rule exists because it is
+    what a struct-binding decoder does by default: Go's encoding/json
+    leaves the target at its zero value on a null, and a port must match
+    that rather than let a hand-written type guard reject null.
+
     Two fields are pointedly not trimmed. The email on POST /api/login
     is matched exactly, so " ada@acme.test " is
     {"error": "no user with that email"} with a 401, not a login, while
@@ -688,9 +700,10 @@ components:
           type: string
           enum: [admin, member]
           description: >
-            Optional. If omitted, or if the string value is not admin or
-            member, defaults to member. A non-string value violates this
-            schema and is rejected with 400.
+            Optional. If omitted, null, or a string value that is not
+            admin or member, defaults to member. A non-string value
+            other than null violates this schema and is rejected with
+            400; see the null rule in the top-level description.
       additionalProperties: false
 
     ChangeMemberRoleRequest:
@@ -708,7 +721,7 @@ components:
         description: {type: string}
         sensitivity:
           type: string
-          description: Defaults to internal if omitted.
+          description: Defaults to internal if omitted, null, or empty.
       additionalProperties: false
 
     RequestAccessRequest:

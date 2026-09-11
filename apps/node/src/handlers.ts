@@ -68,9 +68,13 @@ type FieldResult = { ok: true; value: string } | { ok: false; kind: "invalid" | 
 // A required field, absent or wrong-typed distinguished from present
 // but blank (after an optional trim), since the contract gives those
 // two failures different messages on most routes.
+//
+// A JSON null counts as absent, not as a wrong type: the contract says
+// null is equivalent to omitting the field, so a null name is a missing
+// name, not a schema violation.
 function requiredStringField(body: Record<string, unknown>, key: string, trim: boolean): FieldResult {
   const raw = body[key];
-  if (raw === undefined) return { ok: false, kind: "required" };
+  if (raw === undefined || raw === null) return { ok: false, kind: "required" };
   if (typeof raw !== "string") return { ok: false, kind: "invalid" };
   const value = trim ? raw.trim() : raw;
   if (value === "") return { ok: false, kind: "required" };
@@ -79,11 +83,11 @@ function requiredStringField(body: Record<string, unknown>, key: string, trim: b
 
 type OptionalFieldResult = { ok: true; value: string } | { ok: false };
 
-// An optional, trimmed field: absent becomes "", present must be a
-// string.
+// An optional, trimmed field: absent or null becomes "", any other
+// non-string is a 400. null is equivalent to omitting the field.
 function optionalStringField(body: Record<string, unknown>, key: string): OptionalFieldResult {
   const raw = body[key];
-  if (raw === undefined) return { ok: true, value: "" };
+  if (raw === undefined || raw === null) return { ok: true, value: "" };
   if (typeof raw !== "string") return { ok: false };
   return { ok: true, value: raw.trim() };
 }
@@ -143,9 +147,9 @@ export async function handleInviteMember(req: Request, res: Response, store: Sto
   if (!name.ok || !email.ok) return fail(res, 400, "name and email required");
 
   // role is declared type: string in the schema, so a wrong type fails
-  // validation before the enum default ever applies. Omitted, or a
-  // string outside the enum, defaults to member.
-  const rawRole = body.role;
+  // validation before the enum default ever applies. Omitted, null, or
+  // a string outside the enum, defaults to member.
+  const rawRole = body.role ?? undefined;
   if (rawRole !== undefined && typeof rawRole !== "string") return fail(res, 400, "invalid body");
   const role = rawRole === "admin" || rawRole === "member" ? rawRole : "member";
 
@@ -181,7 +185,8 @@ export async function handleUpdateMemberRole(req: Request, res: Response, store:
 
   // role is declared type: string, so a wrong type is a schema
   // violation (400 invalid body), distinct from a wrong string value.
-  const rawRole = body.role;
+  // null is equivalent to omitting it, so it fails the enum check below.
+  const rawRole = body.role ?? undefined;
   if (rawRole !== undefined && typeof rawRole !== "string") return fail(res, 400, "invalid body");
 
   // Compared exactly, not trimmed: an absent key or a mistyped or

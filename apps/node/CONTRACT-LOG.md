@@ -141,6 +141,37 @@ directly in the task brief (which itself is derived from
    defensible on its own text, which is exactly why review caught it
    and the description needed rewording, not just the code.
 
+   Amended again by the final review: the type guard this item added
+   also classified a JSON `null` as a non-string, which made
+   `{"role": null}` a 400 here while the reference app returned 201.
+   See item 7.
+
+7. **RESOLVED. Is a JSON `null` a wrong type, or an omitted field?** A
+   divergence this app created. Item 6's type guards rejected `null`
+   along with every other non-string, so `{"role": null}` on
+   `POST /api/members` and `{"description": null}` or
+   `{"sensitivity": null}` on `POST /api/resources` were 400 here and
+   201 in the reference app. The same guard turned `{"name": null}`
+   into `{"error": "invalid body"}` where the reference app says
+   `{"error": "name and email required"}`.
+
+   Why the reference behaves that way: Go's `encoding/json` treats a
+   `null` into a string field as a no-op, so the field keeps its zero
+   value and the documented default applies. Nothing in the contract
+   contradicted that, and item 6's amendment ("a non-string value
+   violates this schema") had accidentally endorsed this app against it.
+
+   Resolution: `null` is equivalent to omitting the field, everywhere,
+   optional and required alike. `requiredStringField` and
+   `optionalStringField` now treat `null` exactly as `undefined`, and
+   both role guards read `body.role ?? undefined` so a `null` falls
+   through to the omitted path. Any other wrong type is still a 400.
+   `openapi.yaml`'s top-level description now states the rule outright
+   and `InviteMemberRequest.role`'s description was corrected to
+   "A non-string value other than null". `validation_test.go` in the
+   harness asserts it against every app, and `router.test.ts` has three
+   cases of its own.
+
 ## Read restriction for Task 5
 
 Same as Task 4: I did not open `apps/go/handlers/` or
