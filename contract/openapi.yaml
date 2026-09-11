@@ -188,7 +188,8 @@ paths:
     get:
       summary: List members of the actor's organization
       description: >
-        Ordered by id ascending. See x-ordering.
+        Ordered by created_at ascending, then id ascending. See
+        x-ordering.
       responses:
         '200':
           description: Members of the actor's organization.
@@ -277,7 +278,8 @@ paths:
       summary: List resources in the actor's organization
       description: >
         Includes decommissioned resources so historical context stays
-        visible. Ordered by id ascending. See x-ordering.
+        visible. Ordered by created_at ascending, then id ascending.
+        See x-ordering.
       responses:
         '200':
           description: Resources in the actor's organization.
@@ -760,12 +762,13 @@ components:
 
 x-ordering:
   description: >
-    Total order for every list endpoint. The domain key, then id
-    ascending as tiebreak. Without the tiebreak, equal timestamps order
-    arbitrarily and Go's unstable sort diverges from the stable sorts
-    in JS, Python, and Rust.
-  GET /api/members:                   [id asc]
-  GET /api/resources:                 [id asc]
+    Total order for every list endpoint: the domain key, then id
+    ascending as tiebreak. id alone is not a usable domain key across
+    independently written apps, since generated ids are a random hex
+    suffix that can sort either side of the seeded rows, so members
+    and resources use created_at as their domain key instead.
+  GET /api/members:                   [created_at asc, id asc]
+  GET /api/resources:                 [created_at asc, id asc]
   GET /api/resources/{id}/requests:   [created_at desc, id asc]
   GET /api/requests/{id}/comments:    [created_at asc, id asc]
   examples:

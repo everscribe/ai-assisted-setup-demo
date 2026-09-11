@@ -39,6 +39,8 @@ func TestSeededListsMatchTheDeclaredOrder(t *testing.T) {
 			}{
 				{"/api/resources/r_acme_pg/requests", []string{"req_acme_1", "req_acme_4", "req_acme_5"}},
 				{"/api/requests/req_acme_1/comments", []string{"c_acme_1", "c_acme_2", "c_acme_3"}},
+				{"/api/members", []string{"u_ada", "u_linus"}},
+				{"/api/resources", []string{"r_acme_pg", "r_acme_s3", "r_acme_stripe"}},
 			}
 			for _, tc := range cases {
 				resp := validated(t, c, http.MethodGet, tc.path, "u_ada", "")

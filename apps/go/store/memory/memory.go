@@ -97,7 +97,8 @@ func (s *Store) FindUserByEmail(ctx context.Context, email string) (*models.User
 	return nil, store.ErrNotFound
 }
 
-// ListOrgMembers returns every user in an organization, sorted by ID.
+// ListOrgMembers returns every user in an organization, sorted by
+// created_at then ID.
 func (s *Store) ListOrgMembers(ctx context.Context, orgID string) ([]*models.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -108,7 +109,15 @@ func (s *Store) ListOrgMembers(ctx context.Context, orgID string) ([]*models.Use
 			out = append(out, u)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	// created_at asc, id asc. id alone is not a total order across apps:
+	// generated ids are a prefix plus random hex and sort either side of
+	// the seeded rows.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
@@ -174,7 +183,15 @@ func (s *Store) ListOrgResources(ctx context.Context, orgID string) ([]*models.R
 			out = append(out, r)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	// created_at asc, id asc. id alone is not a total order across apps:
+	// generated ids are a prefix plus random hex and sort either side of
+	// the seeded rows.
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
