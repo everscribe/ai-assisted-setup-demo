@@ -315,12 +315,23 @@ generated ids are a fixed prefix plus random hex: a new resource gets
 `r_<hex>`, which sorts either side of the seeded `r_acme_*` rows depending
 on its suffix. Two conformant apps each creating one resource were observed
 returning `[r_17be, r_acme, r_acme, r_acme]` and
-`[r_acme, r_acme, r_acme, r_ed5d]`. With four apps the chance all of them
-land on the same side is about one in eight, so the affected steps fail
-roughly 87% of the time.
+`[r_acme, r_acme, r_acme, r_ed5d]`.
 
-Both endpoints therefore declare `created_at asc, id asc`. Every seeded row
-shares `2026-03-13T12:00:00Z`, so seeded rows are ordered by their fixed ids
+The split is not even. A generated id's first hex character decides against
+`acme`: `0` to `9` sorts before (10 in 16), `b` to `f` after (5 in 16), and
+`a` resolves on the next character, which sorts before in 13 cases out of
+16. So a new row sorts before the seeded block with probability about 0.676,
+and all four apps agreeing is 0.676 to the fourth plus 0.324 to the fourth,
+roughly one chance in five. The affected steps therefore fail about four
+times in five. A generated id can never land BETWEEN the seeded rows, since
+that would require the non-hex characters `m` and `_`, so the outcome really
+is binary.
+
+**Both endpoints must therefore declare `created_at asc, id asc`. This is
+pending work, not current state: it is Task 0 of Plan 3.** The edit touches
+three places, the `x-ordering` block in `contract/openapi.yaml` and the
+prose describing each endpoint. Once made, every seeded row shares
+`2026-03-13T12:00:00Z`, so seeded rows order by their fixed ids
 deterministically, and every runtime row carries a later timestamp so it
 sorts last, in creation order, identically in every app.
 
@@ -492,27 +503,66 @@ redeclaration above; cross-tenant controls for `DELETE /api/members/{id}`
 and `PUT /api/members/{id}/role`, without which an acme admin can delete a
 globex member and promote them with the suite green; exact status
 assertions on the lifecycle's approve, revoke, and decommission steps, whose
-absence makes the seed test's two exemptions exploitable; and the readiness
-loop gaining ports 9002 to 9004. Then Express plus Svelte on 9002, which
-switches on the cross-app equality layer for the first time.
+absence makes the seed test's two exemptions exploitable; the readiness
+loop gaining ports 9002 to 9004; and, fifth, proving the security layer
+fails.
 
-**Plan 4: Rust and vanilla TS** on 9003. **Plan 5: Python and Vue** on 9004,
-the undocumented stretch case, last on purpose.
+That fifth item generalises the rule this spec already applies to
+`make check-clean`. Two of the four corrections above are the same bug: an
+assertion table that silently omits routes, where a green suite told nobody
+the other routes were missing. The security layer has had no
+demonstrate-it-fails requirement, and it is about to become the acceptance
+test three from-scratch ports are judged by. A hole in it does not fail
+loudly, it passes quietly in all three ports at once, and layer 2 cannot
+catch that because equality only compares apps to each other. So: for each
+security invariant, plant the corresponding defect in `apps/go` and confirm
+the suite goes red. Drop the org filter from `RemoveMember` and from
+`ChangeMemberRole`, make `ApproveRequest` a no-op, make
+`DecommissionResource` a no-op, and remove the `X-User-ID` check from one
+route. Revert each after observing the failure. This check would have found
+Task 0 items 2 and 3 during Plan 2 rather than during Plan 3 triage.
+
+Then Express plus Svelte on 9002, which switches on the cross-app equality
+layer for the first time.
+
+**Plan 4: Rust and vanilla TS** on 9003. **Plan 5: Python on 9004, paired
+with Vue**, the undocumented frontend and the stretch case, last on purpose.
+FastAPI itself is documented; `examples/{react,svelte,vanilla}-python.md`
+all exist. Vue is the uncharted half, and saying so keeps a Plan 5 failure
+from being ambiguous between "the agent cannot do Vue" and "the agent cannot
+do Python".
 
 One app per plan, not one app per task. Each app is roughly 1800 lines of
-backend and 1000 of frontend; a 2800-line task has no useful review
-granularity, and this design's first two plans needed a fix round on almost
-every task.
+backend and 1600 of frontend: 1000 lines of TypeScript plus a 611-line
+stylesheet that each app carries its own copy of, since the
+self-containment rule above forbids sharing it. A 3400-line task has no
+useful review granularity, and this design's first two plans needed a fix
+round on almost every task.
 
 **The ports are written from the contract, not from the Go app.** An
-implementer is given `apps/go`'s structure (the store interface, the file
-layout, the error-mapping shape) but takes every behavioural question from
-`contract/openapi.yaml` and `contract/seed.json`. This is the only real test
-of whether the contract is sufficient to build against. Letting an
-implementer read the Go handlers guarantees a conforming app and proves
-nothing; a fix round caused by a hole in the contract is the most valuable
-output of Plan 3, and it is far cheaper to find with one port written than
-with three.
+implementer is given `apps/go`'s STRUCTURE, meaning the store interface in
+`store/store.go` and the file layout, and takes every BEHAVIOURAL question
+from `contract/openapi.yaml` and `contract/seed.json`. Note that
+error-to-status mapping is behaviour, not structure, and lives in the
+contract; it is not among the things an implementer may look up.
+
+This is the only real test of whether the contract is sufficient to build
+against. Letting an implementer read the Go handlers guarantees a
+conforming app and proves nothing; a fix round caused by a hole in the
+contract is the most valuable output of Plan 3, and it is far cheaper to
+find with one port written than with three.
+
+**The rule needs a mechanism or it will not survive the first ambiguity**,
+since the implementer has `apps/go/handlers/` in the same checkout and the
+tempting moment to read it is exactly the moment a contract hole would
+otherwise surface. Removing those directories does not work: the equality
+layer needs the Go app running on 9001 to compare against, and deleting
+`handlers/` and `store/memory/` breaks its build, which was verified rather
+than assumed. So the mechanism is a log. Every question the implementer
+could not answer from `openapi.yaml` and `seed.json` is recorded, with what
+it did instead, and that log is a Plan 3 deliverable. An empty log means the
+contract is sufficient; a non-empty one is the list of contract fixes that
+must land before Plan 4.
 
 The ordering is deliberate. Writing the contract before the ports means the
 ports have a target; building the harness before the ports means they have a
