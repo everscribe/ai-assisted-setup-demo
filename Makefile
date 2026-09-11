@@ -1,4 +1,4 @@
-.PHONY: up down verify check-clean dev-go dev-node
+.PHONY: up down verify test-node check-clean dev-go dev-node
 
 up:
 	docker compose up --build -d
@@ -49,6 +49,14 @@ verify:
 	  go test ./... -count=1 -v ); status=$$?; \
 	docker compose down; \
 	exit $$status
+
+# apps/node's unit tests. CI's conformance job runs this, so they are no
+# longer a suite that only runs when someone remembers it exists. It is
+# not folded into `verify`: verify needs docker and nothing else, and a
+# pnpm install on that path would make the acceptance command depend on a
+# node toolchain being present.
+test-node:
+	cd apps/node && pnpm install --frozen-lockfile && pnpm test
 
 dev-go:
 	cd apps/go/web && pnpm install --frozen-lockfile && pnpm run build
