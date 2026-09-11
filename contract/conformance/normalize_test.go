@@ -83,6 +83,21 @@ func TestNormalizeKeepsIDIdentityAcrossCalls(t *testing.T) {
 		"the same id must keep its placeholder across separate Normalize calls on one normalizer")
 }
 
+func TestNormalizeKeepsTimestampIdentityAcrossCalls(t *testing.T) {
+	t.Parallel()
+	n := NewNormalizer(seedSet())
+	first, err := n.Normalize([]byte(`{"created_at":"2026-03-14T12:00:00Z"}`))
+	require.NoError(t, err)
+	second, err := n.Normalize([]byte(`{"created_at":"2026-09-10T17:35:21Z"}`))
+	require.NoError(t, err)
+	third, err := n.Normalize([]byte(`{"created_at":"2026-03-14T12:00:00Z"}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"created_at":"$ts1"}`, string(first))
+	require.JSONEq(t, `{"created_at":"$ts2"}`, string(second))
+	require.JSONEq(t, `{"created_at":"$ts1"}`, string(third),
+		"the same timestamp must keep its placeholder across separate Normalize calls on one normalizer")
+}
+
 func TestNormalizeIsStableAcrossKeyOrder(t *testing.T) {
 	t.Parallel()
 	n1, n2 := NewNormalizer(seedSet()), NewNormalizer(seedSet())

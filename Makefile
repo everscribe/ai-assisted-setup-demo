@@ -6,9 +6,16 @@ up:
 down:
 	docker compose down
 
-# Plan 2 replaces this with the conformance harness.
 verify:
-	@echo "conformance harness lands in plan 2"
+	docker compose up --build -d
+	@echo "waiting for apps to answer /api/health"
+	@for i in $$(seq 1 30); do \
+	  curl -fsS localhost:9001/api/health >/dev/null 2>&1 && break; \
+	  sleep 1; \
+	done
+	@cd contract/conformance && go test ./... -count=1 -v; status=$$?; \
+	 cd ../.. && docker compose down; \
+	 exit $$status
 
 dev-go:
 	cd apps/go/web && pnpm install --frozen-lockfile && pnpm run build
