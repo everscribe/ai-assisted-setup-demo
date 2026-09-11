@@ -572,9 +572,9 @@ throw away the confirmation at the moment it becomes available.
 is produced equally by a sufficient contract, by an implementer who read the
 Go handlers at the ambiguous moment, and by an implementer who simply did
 not keep the log. Those are the three outcomes the mechanism most needs to
-tell apart. So the implementer states, as part of the deliverable, that it did not open
-`apps/go/handlers/` or `apps/go/store/memory/`. An empty log with no such
-statement is treated as a log that was not kept.
+tell apart. So the implementer states, as part of the deliverable, that it
+did not open `apps/go/handlers/` or `apps/go/store/memory/`. An empty log
+with no such statement is treated as a log that was not kept.
 
 The statement is the load-bearing half; do not ask for a provenance table
 covering every behaviour. Across eighteen routes, their shapes, statuses,
