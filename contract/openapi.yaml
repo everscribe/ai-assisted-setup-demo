@@ -687,7 +687,10 @@ components:
         role:
           type: string
           enum: [admin, member]
-          description: Defaults to member if omitted or not one of admin, member.
+          description: >
+            Optional. If omitted, or if the string value is not admin or
+            member, defaults to member. A non-string value violates this
+            schema and is rejected with 400.
       additionalProperties: false
 
     ChangeMemberRoleRequest:

@@ -97,6 +97,50 @@ directly in the task brief (which itself is derived from
    it is an inference from the framing of a single worked example, not
    a rule the contract states for the missing-key case specifically.
 
+6. **RESOLVED. Does a non-string `role` get rejected, or coerced to
+   "member"?** Originally a divergence, caught by review, not by the
+   harness (see the note on that below). `InviteMemberRequest.role`
+   carried `type: string, enum: [admin, member]` with description
+   "Defaults to member if omitted or not one of admin, member." I read
+   "not one of admin, member" as covering any value that fails the enum
+   check, including a value of the wrong type, so `{"role": 123}` on
+   `POST /api/members` fell through to the "member" default and
+   returned 201.
+
+   What I did at the time: `handleInviteMember` compared `rawRole` to
+   the two string literals with no type guard, unlike every other field
+   in this app, which rejects a wrong type as 400 `invalid body` before
+   ever reaching a default or a trim. Confidence at the time: not
+   flagged, since I read the description as settling it.
+
+   Resolution: the reference app returns 400 for `{"role": 123}`, not
+   201. The description's "not one of admin, member" governs a string
+   outside the enum, like `"wizard"`, since the field is declared
+   `type: string` first; a non-string value fails the schema before the
+   enum is ever consulted. `InviteMemberRequest.role`'s description in
+   `openapi.yaml` now reads: "Optional. If omitted, or if the string
+   value is not admin or member, defaults to member. A non-string value
+   violates this schema and is rejected with 400." `handleInviteMember`
+   now type-checks `role` the same way `requiredStringField` and
+   `optionalStringField` check every other field: present and
+   non-string is 400 `invalid body`; omitted or a string outside the
+   enum still defaults to "member". `handleUpdateMemberRole` got the
+   same type check for the same reason (`ChangeMemberRoleRequest.role`
+   is also `type: string`), ahead of the existing exact-match check from
+   item 5 above, which still governs a present, correctly-typed, but
+   wrong string value (or the missing-key case item 5 covers, since
+   `rawRole !== undefined` guards the new type check and leaves a
+   missing key to fall into the existing equality branch unchanged).
+   Both routes have a `router.test.ts` case sending `role: 123` and
+   asserting 400 `invalid body`, proven by mutation: restoring the
+   old untyped coercion made both new tests fail (201 and
+   `"role must be admin or member"` respectively, instead of 400
+   `invalid body`), and restoring the fix made them pass again.
+
+   Worth recording plainly: my reading of the enum description was
+   defensible on its own text, which is exactly why review caught it
+   and the description needed rewording, not just the code.
+
 ## Read restriction for Task 5
 
 Same as Task 4: I did not open `apps/go/handlers/` or

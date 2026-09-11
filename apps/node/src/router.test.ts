@@ -40,4 +40,22 @@ describe("router", () => {
     expect(r.headers["content-type"]).toBeUndefined();
     expect(r.text).toBe("");
   });
+
+  it("400s a non-string role on invite, rather than coercing it", async () => {
+    const r = await request(app)
+      .post("/api/members")
+      .set("X-User-ID", "u_ada")
+      .send({ name: "Grace", email: "grace2@acme.test", role: 123 });
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ error: "invalid body" });
+  });
+
+  it("400s a non-string role on role change, rather than coercing it", async () => {
+    const r = await request(app)
+      .put("/api/members/u_linus/role")
+      .set("X-User-ID", "u_ada")
+      .send({ role: 123 });
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ error: "invalid body" });
+  });
 });

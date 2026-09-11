@@ -142,7 +142,11 @@ export async function handleInviteMember(req: Request, res: Response, store: Sto
   }
   if (!name.ok || !email.ok) return fail(res, 400, "name and email required");
 
+  // role is declared type: string in the schema, so a wrong type fails
+  // validation before the enum default ever applies. Omitted, or a
+  // string outside the enum, defaults to member.
   const rawRole = body.role;
+  if (rawRole !== undefined && typeof rawRole !== "string") return fail(res, 400, "invalid body");
   const role = rawRole === "admin" || rawRole === "member" ? rawRole : "member";
 
   try {
@@ -175,9 +179,14 @@ export async function handleUpdateMemberRole(req: Request, res: Response, store:
   const body = parseJSON(req.body);
   if (!isObject(body)) return fail(res, 400, "invalid body");
 
-  // Compared exactly, not trimmed: any value other than the two
-  // literals fails the same way, whether absent, mistyped, or padded.
-  const role = body.role;
+  // role is declared type: string, so a wrong type is a schema
+  // violation (400 invalid body), distinct from a wrong string value.
+  const rawRole = body.role;
+  if (rawRole !== undefined && typeof rawRole !== "string") return fail(res, 400, "invalid body");
+
+  // Compared exactly, not trimmed: an absent key or a mistyped or
+  // padded string all fail this the same way.
+  const role = rawRole;
   if (role !== "admin" && role !== "member") return fail(res, 400, "role must be admin or member");
 
   try {
