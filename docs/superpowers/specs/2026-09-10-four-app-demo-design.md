@@ -496,8 +496,8 @@ and security layers only. This lands before the new backends on purpose:
 building the harness first means each new app has an acceptance test waiting
 for it, rather than being declared correct by inspection.
 
-**Plan 3: Task 0 plus the Node app.** Task 0 is four corrections that must
-land before any port is written, because three ports get written from the
+**Plan 3: Task 0 plus the Node app.** Task 0 is four corrections and a
+verification, all of which must land before any port is written, because three ports get written from the
 contract and a contract change is cheap only until then: the ordering
 redeclaration above; cross-tenant controls for `DELETE /api/members/{id}`
 and `PUT /api/members/{id}/role`, without which an acme admin can delete a
@@ -558,11 +558,32 @@ tempting moment to read it is exactly the moment a contract hole would
 otherwise surface. Removing those directories does not work: the equality
 layer needs the Go app running on 9001 to compare against, and deleting
 `handlers/` and `store/memory/` breaks its build, which was verified rather
-than assumed. So the mechanism is a log. Every question the implementer
-could not answer from `openapi.yaml` and `seed.json` is recorded, with what
-it did instead, and that log is a Plan 3 deliverable. An empty log means the
-contract is sufficient; a non-empty one is the list of contract fixes that
-must land before Plan 4.
+than assumed. So the mechanism is a log. Every question the implementer could not answer
+from `openapi.yaml` and `seed.json` is recorded, with what it did instead,
+and that log is a deliverable of Plans 3, 4 and 5 alike. A non-empty Plan 3
+log is the list of contract fixes that must land before Plan 4; Plans 4 and
+5 are where a corrected contract either holds or does not, so their logs are
+the evidence that it did. Discarding the requirement after Plan 3 would
+throw away the confirmation at the moment it becomes available.
+
+**An empty log is only meaningful as an explicit claim**, because an absence
+is produced equally by a sufficient contract, by an implementer who read the
+Go handlers at the ambiguous moment, and by an implementer who simply did
+not keep the log. Those are the three outcomes the mechanism most needs to
+tell apart. So the implementer states, as part of the deliverable, that it
+did not open `apps/go/handlers/` or `apps/go/store/memory/`, and records for
+each behaviour it implemented where the answer came from. An empty log with
+no such statement is treated as a log that was not kept.
+
+There is a harder variant if that ever proves insufficient. Build the Go
+image once while the source is present (`docker compose build go`), then run
+the port work in a worktree whose compose file says `image: demo-go:frozen`
+rather than `build: ./apps/go`, with `handlers/` and `store/memory/` absent.
+The harness discovers apps over HTTP and never reads their source, so a
+prebuilt image serves 9001 perfectly well; the objection above is to
+deleting those directories in place, not to the approach. It costs a compose
+variant and a stale-image hazard, which is probably not worth it while the
+log plus an explicit statement gets most of the value.
 
 The ordering is deliberate. Writing the contract before the ports means the
 ports have a target; building the harness before the ports means they have a
