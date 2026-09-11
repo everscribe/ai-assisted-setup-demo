@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -587,6 +588,45 @@ func TestRequestingAccessToDecommissionedResourceIs409(t *testing.T) {
 			resp := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/requests", "u_linus",
 				`{"reason":"should be refused, the resource is decommissioned"}`)
 			require.Equal(t, http.StatusConflict, resp.Status)
+		})
+	}
+}
+
+// Decommission is idempotent: a second call returns 200 again and
+// re-stamps decommission_at, rather than 409. This is one of the two
+// contract amendments this repo's plan exists to pin, and until now it
+// was only caught incidentally, by the lifecycle being replayed twice in
+// one run. An incidental catch is not a named assertion: drop the second
+// replay and the amendment goes unchecked. This asserts it directly.
+//
+// The re-stamp is asserted, not just the status, because a store that
+// returned the existing row unchanged would also answer 200 twice and
+// satisfy a status-only check while breaking what the contract promises.
+func TestDecommissionIsIdempotentAndRestampsTheTimestamp(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			resource := registerResource(t, c, "decommission-idempotence-resource")
+
+			first := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/decommission", "u_ada", "")
+			require.Equal(t, http.StatusOK, first.Status, "first decommission")
+			firstAt := jsonField(t, first.Body, "decommission_at")
+			require.NotEmpty(t, firstAt, "decommission must stamp decommission_at")
+
+			// The coarsest clock any of the four ports uses is Node's
+			// millisecond Date. Two back-to-back calls can land in the
+			// same millisecond there, so the re-stamp is only observable
+			// after a pause longer than that resolution.
+			time.Sleep(25 * time.Millisecond)
+
+			second := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/decommission", "u_ada", "")
+			require.Equal(t, http.StatusOK, second.Status,
+				"decommissioning an already-decommissioned resource must be 200 again, not 409")
+			secondAt := jsonField(t, second.Body, "decommission_at")
+			require.NotEqual(t, firstAt, secondAt,
+				"the second decommission must re-stamp decommission_at, not return the first stamp unchanged")
 		})
 	}
 }
