@@ -308,6 +308,22 @@ Ordering is the other half, and it is where cross-language comparison
 actually breaks. Every list endpoint declares a total order in
 `openapi.yaml`: the domain sort key, then `id` ascending as tiebreak.
 
+**The domain sort key must be stable across apps, and `id` alone is not.**
+`GET /api/resources` and `GET /api/members` originally declared `id asc`.
+That is not a total order across independently running apps, because
+generated ids are a fixed prefix plus random hex: a new resource gets
+`r_<hex>`, which sorts either side of the seeded `r_acme_*` rows depending
+on its suffix. Two conformant apps each creating one resource were observed
+returning `[r_17be, r_acme, r_acme, r_acme]` and
+`[r_acme, r_acme, r_acme, r_ed5d]`. With four apps the chance all of them
+land on the same side is about one in eight, so the affected steps fail
+roughly 87% of the time.
+
+Both endpoints therefore declare `created_at asc, id asc`. Every seeded row
+shares `2026-03-13T12:00:00Z`, so seeded rows are ordered by their fixed ids
+deterministically, and every runtime row carries a later timestamp so it
+sorts last, in creation order, identically in every app.
+
 Without the tiebreak, equal timestamps order arbitrarily, and Go diverges
 from the other three by construction: `sort.Slice` is unstable, while
 JavaScript's `Array.prototype.sort`, Python's `sorted`, and Rust's `sort_by`
@@ -442,7 +458,7 @@ with nobody aware of it.
 
 ## Implementation shape
 
-This design is too large for one implementation plan. It splits into three,
+This design is too large for one implementation plan. It splits into five,
 each independently landable and each leaving the repo in a working state:
 
 **Plan 1: restructure and reference app.** Move the Go app to `apps/go`,
@@ -469,13 +485,39 @@ and security layers only. This lands before the new backends on purpose:
 building the harness first means each new app has an acceptance test waiting
 for it, rather than being declared correct by inspection.
 
-**Plan 3: the three new apps.** Python, Node, Rust, backend and frontend
-each, one app per unit of work. Cross-app equality switches on as the second
-app lands.
+**Plan 3: Task 0 plus the Node app.** Task 0 is four corrections that must
+land before any port is written, because three ports get written from the
+contract and a contract change is cheap only until then: the ordering
+redeclaration above; cross-tenant controls for `DELETE /api/members/{id}`
+and `PUT /api/members/{id}/role`, without which an acme admin can delete a
+globex member and promote them with the suite green; exact status
+assertions on the lifecycle's approve, revoke, and decommission steps, whose
+absence makes the seed test's two exemptions exploitable; and the readiness
+loop gaining ports 9002 to 9004. Then Express plus Svelte on 9002, which
+switches on the cross-app equality layer for the first time.
+
+**Plan 4: Rust and vanilla TS** on 9003. **Plan 5: Python and Vue** on 9004,
+the undocumented stretch case, last on purpose.
+
+One app per plan, not one app per task. Each app is roughly 1800 lines of
+backend and 1000 of frontend; a 2800-line task has no useful review
+granularity, and this design's first two plans needed a fix round on almost
+every task.
+
+**The ports are written from the contract, not from the Go app.** An
+implementer is given `apps/go`'s structure (the store interface, the file
+layout, the error-mapping shape) but takes every behavioural question from
+`contract/openapi.yaml` and `contract/seed.json`. This is the only real test
+of whether the contract is sufficient to build against. Letting an
+implementer read the Go handlers guarantees a conforming app and proves
+nothing; a fix round caused by a hole in the contract is the most valuable
+output of Plan 3, and it is far cheaper to find with one port written than
+with three.
 
 The ordering is deliberate. Writing the contract before the ports means the
 ports have a target; building the harness before the ports means they have a
-judge.
+judge; and correcting the contract before the first port means the
+correction costs one edit rather than four.
 
 ## Out of scope
 
