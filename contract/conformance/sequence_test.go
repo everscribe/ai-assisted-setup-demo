@@ -11,10 +11,27 @@ import (
 
 var pristineOnce sync.Map // app name -> *sync.Once
 
+// requirePristineExplanation is appended to every failure below so a
+// developer reading the output knows what to do next, not just that
+// something disagrees.
+const requirePristineExplanation = "\nIf this app has already run the conformance suite, its state is " +
+	"no longer pristine and this check cannot pass: restart the app, " +
+	"or use `make verify`, which recreates containers on every run. " +
+	"If this is a fresh app, its seed genuinely disagrees with contract/seed.json."
+
 // requirePristine asserts the two seeded rows the lifecycle mutates start
 // in the state seed.json claims. The seed test cannot check them, because
 // it exempts exactly these fields so the suite stays re-runnable. Running
 // once per app, before any replay, is what closes that hole.
+//
+// Trade-off, on purpose: this guard needs a pristine app, and the
+// lifecycle it guards mutates these two rows on every run. Both cannot
+// hold across repeated runs against one unrestarted app, so a second
+// `go test` against a `make up` you have already exercised will now fail
+// here. That is expected, not a bug to fix by deleting the guard: `make
+// verify` always starts fresh, so CI and the real acceptance path never
+// hit this. Only the manual "make up, then go test twice" loop does, and
+// the failure message says why.
 func requirePristine(t *testing.T, c *Client) {
 	t.Helper()
 	v, _ := pristineOnce.LoadOrStore(c.App.Name, &sync.Once{})
@@ -27,9 +44,11 @@ func requirePristine(t *testing.T, c *Client) {
 			if r["id"] == "req_acme_1" {
 				found = true
 				require.Equal(t, "pending", r["status"],
-					"req_acme_1 must start pending; the seed test exempts this field")
-				require.Nil(t, r["decided_by"], "req_acme_1 must start undecided")
-				require.Nil(t, r["revoked_by"], "req_acme_1 must start unrevoked")
+					"req_acme_1 must start pending."+requirePristineExplanation)
+				require.Nil(t, r["decided_by"],
+					"req_acme_1 must start undecided."+requirePristineExplanation)
+				require.Nil(t, r["revoked_by"],
+					"req_acme_1 must start unrevoked."+requirePristineExplanation)
 			}
 		}
 		require.True(t, found, "req_acme_1 missing from r_acme_pg's requests")
@@ -40,7 +59,7 @@ func requirePristine(t *testing.T, c *Client) {
 		for _, r := range resources {
 			if r["id"] == "r_acme_s3" {
 				require.Nil(t, r["decommission_at"],
-					"r_acme_s3 must start live; the seed test exempts this field")
+					"r_acme_s3 must start live."+requirePristineExplanation)
 			}
 		}
 	})
