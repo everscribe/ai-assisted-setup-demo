@@ -192,6 +192,23 @@ directly in the task brief (which itself is derived from
    404 as an unknown path, with a lowercase positive control and a
    no-actor probe.
 
+9. **RESOLVED. Does `additionalProperties: false` on a request schema
+   mean anything?** No, and the contract now says so. Every request
+   schema declared it, but neither this app nor the reference app
+   enforced it: `{"name": "x", "bogus": 1}` was a 201 in both. A Rust
+   port using `serde(deny_unknown_fields)` or a Python port using
+   Pydantic `extra="forbid"` would have mirrored the schema faithfully
+   and returned 400 where both existing apps return 201, and nothing in
+   the harness would have caught it.
+
+   Resolution: the schemas were relaxed rather than the apps tightened,
+   since ignoring unknown fields is what all four ecosystems do by
+   default. The six request schemas now set
+   `additionalProperties: true`, the top-level description states that
+   unknown request fields are ignored and warns against mirroring a
+   strict schema, and `validation_test.go` asserts it. Response schemas
+   stay strict; those are accurate and the harness enforces them.
+
 ## Read restriction for Task 5
 
 Same as Task 4: I did not open `apps/go/handlers/` or

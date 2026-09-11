@@ -76,6 +76,16 @@ info:
     leaves the target at its zero value on a null, and a port must match
     that rather than let a hand-written type guard reject null.
 
+    Unknown request fields are ignored. A body carrying a field the
+    route's schema does not declare is accepted and the extra field is
+    discarded, so {"name": "x", "bogus": 1} on POST /api/resources is a
+    201. Every request schema below therefore sets
+    additionalProperties: true. Do not mirror a strict schema here with
+    serde's deny_unknown_fields or Pydantic's extra="forbid"; that would
+    answer 400 where this contract requires success. Response schemas
+    are the opposite and stay strict: a response carrying a field its
+    schema does not declare is a conformance failure.
+
     Two fields are pointedly not trimmed. The email on POST /api/login
     is matched exactly, so " ada@acme.test " is
     {"error": "no user with that email"} with a 401, not a login, while
@@ -698,7 +708,7 @@ components:
       required: [email]
       properties:
         email: {type: string}
-      additionalProperties: false
+      additionalProperties: true
 
     InviteMemberRequest:
       type: object
@@ -714,14 +724,14 @@ components:
             admin or member, defaults to member. A non-string value
             other than null violates this schema and is rejected with
             400; see the null rule in the top-level description.
-      additionalProperties: false
+      additionalProperties: true
 
     ChangeMemberRoleRequest:
       type: object
       required: [role]
       properties:
         role: {type: string, enum: [admin, member]}
-      additionalProperties: false
+      additionalProperties: true
 
     RegisterResourceRequest:
       type: object
@@ -732,21 +742,21 @@ components:
         sensitivity:
           type: string
           description: Defaults to internal if omitted, null, or empty.
-      additionalProperties: false
+      additionalProperties: true
 
     RequestAccessRequest:
       type: object
       required: [reason]
       properties:
         reason: {type: string}
-      additionalProperties: false
+      additionalProperties: true
 
     AddCommentRequest:
       type: object
       required: [body]
       properties:
         body: {type: string}
-      additionalProperties: false
+      additionalProperties: true
 
   responses:
     BadRequest:

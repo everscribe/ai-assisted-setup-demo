@@ -80,6 +80,31 @@ func TestNullFieldIsEquivalentToOmittingIt(t *testing.T) {
 	}
 }
 
+// Unknown request fields are ignored, not rejected. Every request schema
+// in the contract sets additionalProperties: true for this reason; a
+// port mirroring a strict schema with serde's deny_unknown_fields or
+// Pydantic's extra="forbid" fails here.
+func TestUnknownRequestFieldsAreIgnored(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			member := validated(t, c, http.MethodPost, "/api/members", "u_ada",
+				`{"name":"Extra Fields","email":"extra-fields@acme.test","bogus":1}`)
+			require.Equal(t, http.StatusCreated, member.Status)
+
+			resource := validated(t, c, http.MethodPost, "/api/resources", "u_ada",
+				`{"name":"extra-fields-resource","bogus":{"nested":true}}`)
+			require.Equal(t, http.StatusCreated, resource.Status)
+
+			request := validated(t, c, http.MethodPost, "/api/resources/r_acme_stripe/requests", "u_linus",
+				`{"reason":"unknown fields are ignored","bogus":[1,2]}`)
+			require.Equal(t, http.StatusCreated, request.Status)
+		})
+	}
+}
+
 // A mixed-case spelling of a registered path must be as anonymous as an
 // unknown path. Without this, a mixed-case probe distinguishes a
 // registered path (401 with no actor) from an unregistered one (404),

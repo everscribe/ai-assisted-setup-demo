@@ -116,6 +116,16 @@ describe("router", () => {
     expect(comment.body).toEqual({ error: "body required" });
   });
 
+  // Unknown request fields are ignored, per the contract.
+  it("ignores unknown request fields rather than rejecting them", async () => {
+    const r = await request(app)
+      .post("/api/members")
+      .set("X-User-ID", "u_ada")
+      .send({ name: "Extra Fields", email: "extra-fields@acme.test", bogus: 1 });
+    expect(r.status).toBe(201);
+    expect(r.body).not.toHaveProperty("bogus");
+  });
+
   // A mixed-case spelling of a registered path must be as anonymous as
   // an unknown one, or it becomes an existence oracle.
   it("404s a mixed-case path identically to an unknown path", async () => {
