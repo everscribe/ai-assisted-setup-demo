@@ -183,3 +183,17 @@ the approve defect and for both self-found gaps.
 
 No new tests were written to close any gap that was not on this list, and
 no gap on this list was left open.
+
+## What this grid is not
+
+"NOT COVERED: 0" is a claim about four security invariants on eighteen
+routes, and nothing else. The grid says nothing about 400-class request
+validation (required fields, trimming, wrong types, the null rule, and
+unknown fields, which `validation_test.go` covers), nothing about
+protocol-level rules (trailing slashes, case sensitivity, HEAD and
+OPTIONS, Content-Type, the Allow header, the 401-before-403-before-400
+check order), and nothing about ordering or the idempotence of a repeated
+decommission. Those live in other tests and in cross-app equality. A full
+grid across every rule in the contract would be a different and much
+larger document; read this one's totals as "the security columns are
+closed", not as "the contract is fully covered".
