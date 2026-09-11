@@ -51,19 +51,36 @@ func TestNormalizeRejectsNonUTCTimestamps(t *testing.T) {
 
 func TestNormalizeAcceptsAnyFractionalPrecision(t *testing.T) {
 	t.Parallel()
-	n := NewNormalizer(seedSet())
 	// Go trims trailing zeros, Node emits 3 digits, Python 6, Rust 9.
 	// All four are conforming; only the Z suffix and UTC are pinned.
+	// Each case gets its own normalizer, so each is a fresh stream and
+	// legitimately expects $ts1.
 	for _, ok := range []string{
 		`{"created_at":"2026-03-14T12:00:00Z"}`,
 		`{"created_at":"2026-03-14T12:00:00.123Z"}`,
 		`{"created_at":"2026-03-14T12:00:00.123456Z"}`,
 		`{"created_at":"2026-03-14T12:00:00.123456789Z"}`,
 	} {
+		n := NewNormalizer(seedSet())
 		got, err := n.Normalize([]byte(ok))
 		require.NoError(t, err, "must accept %s", ok)
 		require.JSONEq(t, `{"created_at":"$ts1"}`, string(got))
 	}
+}
+
+func TestNormalizeKeepsIDIdentityAcrossCalls(t *testing.T) {
+	t.Parallel()
+	n := NewNormalizer(seedSet())
+	first, err := n.Normalize([]byte(`{"id":"9f2a10bc4d5e"}`))
+	require.NoError(t, err)
+	second, err := n.Normalize([]byte(`{"id":"11bb22cc33dd"}`))
+	require.NoError(t, err)
+	third, err := n.Normalize([]byte(`{"id":"9f2a10bc4d5e"}`))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"id":"$id1"}`, string(first))
+	require.JSONEq(t, `{"id":"$id2"}`, string(second))
+	require.JSONEq(t, `{"id":"$id1"}`, string(third),
+		"the same id must keep its placeholder across separate Normalize calls on one normalizer")
 }
 
 func TestNormalizeIsStableAcrossKeyOrder(t *testing.T) {

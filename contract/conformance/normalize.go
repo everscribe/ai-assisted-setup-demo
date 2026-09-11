@@ -31,16 +31,11 @@ func NewNormalizer(seedIDs map[string]bool) *Normalizer {
 }
 
 // Normalize parses body as JSON, rewrites it, and re-encodes with sorted
-// keys so the output does not depend on the app's key order. Placeholder
-// numbering starts fresh each call: a Normalizer is reused across many
-// responses, but each response is normalized on its own, so its
-// placeholders must not depend on what was normalized before it.
+// keys so the output does not depend on the app's key order.
 func (n *Normalizer) Normalize(body []byte) ([]byte, error) {
 	if len(body) == 0 {
 		return body, nil
 	}
-	n.ids = map[string]string{}
-	n.stamps = map[string]string{}
 	var v any
 	if err := json.Unmarshal(body, &v); err != nil {
 		return nil, fmt.Errorf("normalize: %w", err)
