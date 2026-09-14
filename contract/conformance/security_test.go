@@ -615,10 +615,9 @@ func TestDecommissionIsIdempotentAndRestampsTheTimestamp(t *testing.T) {
 			firstAt := jsonField(t, first.Body, "decommission_at")
 			require.NotEmpty(t, firstAt, "decommission must stamp decommission_at")
 
-			// The coarsest clock any of the four ports uses is Node's
-			// millisecond Date. Two back-to-back calls can land in the
-			// same millisecond there, so the re-stamp is only observable
-			// after a pause longer than that resolution.
+			// The contract sets a millisecond floor on runtime timestamp
+			// precision, which is what makes the re-stamp observable. See
+			// x-ordering.timestamp-precision.
 			time.Sleep(25 * time.Millisecond)
 
 			second := validated(t, c, http.MethodPost, "/api/resources/"+resource+"/decommission", "u_ada", "")
