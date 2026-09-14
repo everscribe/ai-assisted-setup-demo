@@ -17,8 +17,8 @@ on their own branches; `main` stays clean.
 
 The plan is to grow this into four apps, one per language, so the setup
 flow can be exercised against a target that is identical in every
-dimension except language and framework. Today the Go and Node apps
-exist.
+dimension except language and framework. Today the Go, Node and Rust
+apps exist.
 
 ## App matrix
 
@@ -26,21 +26,23 @@ exist.
 |---|---|---|---|
 | `apps/go` | Gin | React | available |
 | `apps/node` | Express | Svelte | available |
-| `apps/rust` | Axum | vanilla TS | planned |
+| `apps/rust` | Axum | vanilla TS | available |
 | `apps/python` | FastAPI | Vue | planned |
 
 ## Running an app locally
 
-Requires Go 1.25+ and Node 18+ with `pnpm` (via `corepack enable`).
+Requires Go 1.25+, Node 18+ with `pnpm` (via `corepack enable`), and
+Rust 1.96+.
 
 ```bash
 make dev-go     # build the SPA and run the Go server on :9001
 make dev-node   # build the SPA and run the Node server on :9002
+make dev-rust   # build the SPA and run the Rust server on :9003
 ```
 
-Open <http://localhost:9001> (Go) or <http://localhost:9002> (Node) and
-sign in as one of the seeded users. For hot reload, run the Vite dev
-server against the API instead:
+Open <http://localhost:9001> (Go), <http://localhost:9002> (Node) or
+<http://localhost:9003> (Rust) and sign in as one of the seeded users.
+For hot reload, run the Vite dev server against the API instead:
 
 ```bash
 cd apps/go && go run .                # Go API on :9001
@@ -48,18 +50,22 @@ cd apps/go/web && pnpm run dev        # Vite dev server, /api proxied
 
 cd apps/node && pnpm run dev          # Node API on :9002
 cd apps/node/web && pnpm run dev      # Vite dev server, /api proxied
+
+cd apps/rust && cargo run             # Rust API on :9003
+cd apps/rust/web && pnpm run dev      # Vite dev server, /api proxied
 ```
 
 ### With Docker
 
-No Go or Node toolchain needed, just Docker:
+No Go, Node or Rust toolchain needed, just Docker:
 
 ```bash
 make up      # docker compose up --build -d
 make down    # docker compose down
 ```
 
-Then open <http://localhost:9001> (Go) or <http://localhost:9002> (Node).
+Then open <http://localhost:9001> (Go), <http://localhost:9002> (Node)
+or <http://localhost:9003> (Rust).
 
 ## Pointing the setup flow at a single app
 
