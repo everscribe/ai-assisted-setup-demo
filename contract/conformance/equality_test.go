@@ -36,6 +36,12 @@ const (
 // placeholder.
 var tsPlaceholder = regexp.MustCompile(`^\$ts\d+$`)
 
+// Only these two. Comparing every header would drag in Date and
+// Content-Length, which vary per response and per runtime, and would
+// reintroduce exactly the non-portable noise the timestamp and array
+// order fixes removed.
+var comparedHeaders = []string{"Content-Type", "Allow"}
+
 // canonicalize collapses timestamp placeholders (see tsPlaceholder) and
 // sorts array elements into a stable order, so two apps' responses
 // compare equal regardless of a clock-resolution-driven ordering tie.
@@ -129,6 +135,9 @@ func TestAppsAgreeWithEachOther(t *testing.T) {
 			body, err := n.Normalize(r.Body)
 			require.NoError(t, err, "%s: step %d (%s)", app.Name, i, steps[i].Name)
 			row := fmt.Sprintf("%d|", r.Status)
+			for _, h := range comparedHeaders {
+				row += fmt.Sprintf("%s=%s|", h, r.Header.Get(h))
+			}
 			if len(body) > 0 {
 				var parsed any
 				require.NoError(t, json.Unmarshal(body, &parsed), "%s: step %d (%s)", app.Name, i, steps[i].Name)
