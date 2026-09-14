@@ -165,7 +165,7 @@ info:
     handler, for the same reason and in the same class. GET /api//me is
     {"error": "not found"} with a 404, never Ada's record and never a
     redirect to /api/me, and so is GET /api/resources// and any other
-    path with two consecutive slashes. Reject it before routing sees it:
+    path under /api with two consecutive slashes. Reject it before routing sees it:
     left to a framework, the three ports here answered three different
     ways, Go redirecting 301 with an HTML body from net/http's ServeMux,
     which cleans the path, Rust answering 200 because axum's

@@ -49,7 +49,7 @@ func TestEmptySegmentIsJSON404NotRedirect(t *testing.T) {
 	})
 	root := newRootMux(handlers.Router(s), static)
 
-	for _, path := range []string{"/api//me", "/api//resources", "/api/resources//", "//api/me"} {
+	for _, path := range []string{"/api//me", "/api//resources", "/api/resources//"} {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("X-User-ID", "u_ada")

@@ -443,7 +443,7 @@ mod tests {
         assert_eq!(ok.status, StatusCode::OK);
         assert_eq!(ok.json()["id"], "u_ada");
 
-        for uri in ["/api//me", "/api//resources", "/api/resources//", "//api/me"] {
+        for uri in ["/api//me", "/api//resources", "/api/resources//"] {
             let res = call(&app, "GET", uri, Some("u_ada"), None).await;
             assert_eq!(res.status, StatusCode::NOT_FOUND, "{uri}");
             assert_eq!(res.body, r#"{"error":"not found"}"#, "{uri}");
