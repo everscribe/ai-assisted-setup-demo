@@ -13,7 +13,9 @@ convention.
 The complete list of files I read is in the task report.
 
 Task 5, the handlers and the router, kept the same restriction and added
-questions 11 to 18 and the notes below them. Its own read list is in
+questions 11 to 18 and the notes below them. Its review lifted the
+restriction far enough to run the other two apps, which settled question
+13; nothing in the four forbidden paths was opened even then. Its own read list is in
 `task-5-report.md`; it opened none of those four paths either, and read
 nothing under `apps/go/` or `apps/node/` at all.
 
@@ -186,21 +188,41 @@ contract's methods.
 
 This also means the brief's `method_mismatch_is_405_with_allow` cannot
 fail: it asserts the header is present, and axum supplies one for free
-with the wrong value. `allow_lists_the_contract_methods_and_nothing_else`
-is the test that can fail, and it reads through `get_all` so a handler
-that appended rather than replaced is caught too.
+with the wrong value. Review confirmed it and overrode the brief, so that
+test is deleted rather than kept as coverage it does not provide.
+`allow_lists_the_contract_methods_and_nothing_else` replaces it: it
+compares the methods as a sorted set against every one of the fourteen
+paths, and reads through `get_all` so a handler that appended rather than
+replaced is caught too.
 
-### 13. Does a bodiless HEAD 405 carry a Content-Type?
+### 13. Does a bodiless HEAD 405 carry a Content-Type? Resolved: yes
 
-The contract says every response that has a body is
+The contract said every response that has a body is
 `application/json; charset=utf-8`, and that the two 204s, which have no
 body, send no Content-Type at all. A HEAD 405 also has no body, and the
-contract does not say which of those two rules it follows.
+contract did not say which of those two rules it followed.
 
-What I did: followed the 204 rule. A HEAD 405 sends the status and Allow
-and nothing else, no Content-Type and no body. Confidence: high, since the
-contract ties Content-Type to having a body and explicitly binds only the
-status and Allow on a HEAD.
+What I did first: followed the 204 rule, and sent the status and Allow and
+nothing else.
+
+That was wrong, and review caught it by running all three apps: Go and
+Node both send `application/json; charset=utf-8` on a HEAD 405, and
+Content-Type is one of the two headers the cross-app equality check
+compares, with `head health` a lifecycle step. So it was a live
+divergence, the only one in twenty-eight steps.
+
+Resolved in favour of Go and Node. RFC 9110 4.3.2 forbids content in a
+HEAD response, but 9.3.2 keeps the header fields the equivalent GET would
+have sent, and learning about a representation without transferring it is
+the whole point of HEAD, so Content-Type stays and only the body goes. The
+handler now builds the ordinary JSON 405, headers and all, and the HTTP
+layer drops the body for HEAD. `contract/openapi.yaml` is amended to say
+so in the prose block that already covers HEAD, so the next port does not
+have to guess.
+
+Two tests hold it: one in process, which pins the status, Allow and
+Content-Type, and one over a real socket, which is the only place the
+dropped body is observable, since the handler no longer drops it.
 
 ### 14. Which 400 message does a wrong-typed field get?
 
@@ -225,9 +247,17 @@ from matching. Confidence: high on the status, which is all that binds.
 The trimming rules are stated per route and per body field, and the two
 exceptions are body fields too. The header is not mentioned anywhere.
 
-What I did: matched exactly, like the login email. " u_ada " is a 401.
-Confidence: high, since trimming is described as something that happens to
-a request body before validation and storage.
+What I did: matched exactly, like the login email, so nothing strips
+whitespace from the header value before the lookup.
+
+The illustration I first wrote for this, that `" u_ada "` is a 401, was
+wrong and review caught it: a field value's leading and trailing
+whitespace is optional whitespace that the transport strips, so a padded
+header never arrives padded and all three apps answer 200. The decision is
+therefore unobservable at the HTTP boundary for outer whitespace, and the
+only reachable case is inner whitespace such as `"u_ ada"`, which is a 401
+under any reading. Recorded because the code still makes a choice, not
+because a conformance check could tell.
 
 ### 16. What answers a path outside /api?
 
@@ -389,7 +419,8 @@ to the `get` slot: `call!(HEAD, head); call!(HEAD, get);` in
 HEAD with a 200 from the GET handler, which the contract forbids. Every
 route registers HEAD explicitly against the 405 handler so the `head` slot
 wins. Verified by mutation: deleting that registration turns
-`head_on_a_get_route_is_405_and_carries_no_body` red and nothing else.
+`head_on_a_get_route_is_405_with_the_headers_the_get_would_have_sent` red
+and nothing else.
 
 ### The crate-wide `#![allow(dead_code)]` is gone
 
@@ -403,9 +434,11 @@ never read.
 None of them is removable. The handlers must map `Forbidden`, the tenant
 scoping test drives `get_resource` and `get_request` through all twelve
 org-scoped methods, and the contract itself says no route returns
-organizations while the seed declares them anyway. So they carry two
-narrow allows with the reason written next to them, one on the variant and
-one on the trait, rather than one blanket allow at the crate root.
+organizations while the seed declares them anyway. So they carry five
+allows scoped to the item each one is about, one on the variant and one on
+each of the four methods no route reaches, rather than a blanket allow at
+the crate root or on the whole trait. A handler that stopped calling any
+of the other thirteen store methods still warns.
 `cargo build --release` is warning-free.
 
 ### Where the SPA lives

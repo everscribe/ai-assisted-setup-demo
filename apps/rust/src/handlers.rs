@@ -9,7 +9,7 @@
 
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, Method, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -355,13 +355,8 @@ pub async fn health() -> Response {
 }
 
 /// Unmatched path, including a trailing slash or the wrong case. A HEAD
-/// keeps the status and drops the body, which RFC 9110 4.3.2 requires.
-pub async fn not_found(method: Method) -> Response {
-    if method == Method::HEAD {
-        return Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::empty())
-            .expect("response builds");
-    }
+/// gets this too, headers and all: the HTTP layer drops the body, which is
+/// the only thing RFC 9110 4.3.2 forbids.
+pub async fn not_found() -> Response {
     fail(StatusCode::NOT_FOUND, "not found")
 }

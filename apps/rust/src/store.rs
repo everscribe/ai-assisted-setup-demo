@@ -34,10 +34,6 @@ impl std::fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
-// The interface mirrors the Go app's, so it carries readers no route
-// reaches: the contract says nothing returns organizations, and the
-// handlers list rows rather than fetching one. The tests use all of them.
-#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Store: Send + Sync {
     async fn seed(&self) -> Result<(), StoreError>;
@@ -48,10 +44,14 @@ pub trait Store: Send + Sync {
     async fn remove_member(&self, org_id: &str, user_id: &str) -> Result<(), StoreError>;
     async fn update_member_role(&self, org_id: &str, user_id: &str, role: &str) -> Result<User, StoreError>;
     async fn list_org_resources(&self, org_id: &str) -> Result<Vec<Resource>, StoreError>;
+    // No route reaches this one; the tests do.
+    #[allow(dead_code)]
     async fn get_resource(&self, org_id: &str, resource_id: &str) -> Result<Resource, StoreError>;
     async fn register_resource(&self, org_id: &str, name: &str, description: &str, sensitivity: &str, registered_by: &str) -> Result<Resource, StoreError>;
     async fn decommission_resource(&self, org_id: &str, resource_id: &str) -> Result<Resource, StoreError>;
     async fn list_resource_requests(&self, org_id: &str, resource_id: &str) -> Result<Vec<AccessRequest>, StoreError>;
+    // No route reaches this one; the tests do.
+    #[allow(dead_code)]
     async fn get_request(&self, org_id: &str, request_id: &str) -> Result<AccessRequest, StoreError>;
     async fn request_access(&self, org_id: &str, resource_id: &str, requested_by: &str, reason: &str) -> Result<AccessRequest, StoreError>;
     async fn approve_request(&self, org_id: &str, request_id: &str, approved_by: &str) -> Result<AccessRequest, StoreError>;
@@ -59,6 +59,10 @@ pub trait Store: Send + Sync {
     async fn revoke_request(&self, org_id: &str, request_id: &str, revoked_by: &str) -> Result<AccessRequest, StoreError>;
     async fn list_request_comments(&self, org_id: &str, request_id: &str) -> Result<Vec<Comment>, StoreError>;
     async fn add_comment(&self, org_id: &str, request_id: &str, author_id: &str, body: &str) -> Result<Comment, StoreError>;
+    // No route reaches this one; the tests do.
+    #[allow(dead_code)]
     async fn list_organizations(&self) -> Result<Vec<Organization>, StoreError>;
+    // No route reaches this one; the tests do.
+    #[allow(dead_code)]
     async fn get_organization(&self, id: &str) -> Result<Organization, StoreError>;
 }

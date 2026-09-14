@@ -3,12 +3,12 @@
 //!
 //! Two things axum does not do by default. A HEAD falls through to the GET
 //! handler unless the HEAD slot is filled, and the contract wants a 405, so
-//! every route registers HEAD explicitly. And a method mismatch gets no
-//! Allow header, so every route carries its own 405 fallback listing the
-//! methods the contract registers for that path. The header's order is
-//! unspecified, so these read in the order the contract lists them.
+//! every route registers HEAD explicitly. And axum's own Allow header lists
+//! that HEAD, which the contract forbids, so every route carries a 405
+//! fallback that sets Allow itself. The header's order is unspecified, so
+//! these read in the order the contract lists them.
 
-use axum::http::{header, Method, StatusCode};
+use axum::http::{header, StatusCode};
 use axum::response::Response;
 use axum::routing::{delete, on, post, put, MethodFilter, MethodRouter};
 use axum::Router;
@@ -17,16 +17,10 @@ use crate::handlers::{self as h, AppState};
 use crate::store::Store;
 use std::sync::Arc;
 
-/// 405 with the path's registered methods. A HEAD keeps the status and the
-/// Allow header and drops the body, which RFC 9110 4.3.2 requires.
-fn method_not_allowed(method: &Method, allow: &'static str) -> Response {
-    if method == Method::HEAD {
-        return Response::builder()
-            .status(StatusCode::METHOD_NOT_ALLOWED)
-            .header(header::ALLOW, allow)
-            .body(axum::body::Body::empty())
-            .expect("response builds");
-    }
+/// 405 with the path's registered methods. A HEAD gets exactly this
+/// response: RFC 9110 9.3.2 keeps the headers the equivalent GET would have
+/// sent, Content-Type included, and the HTTP layer drops the body.
+fn method_not_allowed(allow: &'static str) -> Response {
     let mut res = h::fail(StatusCode::METHOD_NOT_ALLOWED, "method not allowed");
     res.headers_mut()
         .insert(header::ALLOW, allow.parse().expect("static header value"));
@@ -36,10 +30,8 @@ fn method_not_allowed(method: &Method, allow: &'static str) -> Response {
 /// Close a path to every method but the ones registered on it.
 fn closed(methods: MethodRouter<AppState>, allow: &'static str) -> MethodRouter<AppState> {
     methods
-        .on(MethodFilter::HEAD, move |m: Method| async move {
-            method_not_allowed(&m, allow)
-        })
-        .fallback(move |m: Method| async move { method_not_allowed(&m, allow) })
+        .on(MethodFilter::HEAD, move || async move { method_not_allowed(allow) })
+        .fallback(move || async move { method_not_allowed(allow) })
 }
 
 pub fn build_router(store: Arc<dyn Store>) -> Router {
@@ -177,7 +169,13 @@ mod tests {
         }
     }
 
-    // ---- the three the brief pins -------------------------------------
+    // ---- the brief's tests ---------------------------------------------
+    //
+    // The brief's third, method_mismatch_is_405_with_allow, is gone. It
+    // asserted only that an Allow header was present, and axum supplies one
+    // of its own on any 405, so it passed with the handler's own Allow
+    // deleted and with axum's wrong "POST,HEAD" value on the wire.
+    // allow_lists_the_contract_methods_and_nothing_else replaces it.
 
     #[tokio::test]
     async fn unauthenticated_is_json_401() {
@@ -187,15 +185,6 @@ mod tests {
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
         let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&bytes[..], br#"{"error":"unauthorized"}"#);
-    }
-
-    #[tokio::test]
-    async fn method_mismatch_is_405_with_allow() {
-        let res = app().await.oneshot(
-            Request::builder().uri("/api/login").body(Body::empty()).unwrap()
-        ).await.unwrap();
-        assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
-        assert!(res.headers().get("allow").is_some(), "405 must carry an Allow header");
     }
 
     #[tokio::test]
@@ -209,7 +198,7 @@ mod tests {
     // ---- HEAD, OPTIONS and Allow --------------------------------------
 
     #[tokio::test]
-    async fn head_on_a_get_route_is_405_and_carries_no_body() {
+    async fn head_on_a_get_route_is_405_with_the_headers_the_get_would_have_sent() {
         let app = app().await;
         // Positive control: the GET this HEAD would otherwise fall through to.
         let get = call(&app, "GET", "/api/health", None, None).await;
@@ -219,8 +208,59 @@ mod tests {
         let head = call(&app, "HEAD", "/api/health", None, None).await;
         assert_eq!(head.status, StatusCode::METHOD_NOT_ALLOWED);
         assert_eq!(head.allow(), vec!["GET"]);
-        assert_eq!(head.body, "", "RFC 9110 forbids a body on a HEAD response");
-        assert_eq!(head.header("content-type"), None);
+        // RFC 9110 9.3.2: only the body is omitted. Content-Type describes
+        // the representation, which is the point of asking for HEAD.
+        assert_eq!(
+            head.header("content-type").as_deref(),
+            Some("application/json; charset=utf-8")
+        );
+    }
+
+    /// The body is dropped by the HTTP layer, not by the handler, so only a
+    /// real connection can show it. Driven over a socket for that reason.
+    #[tokio::test]
+    async fn head_on_the_wire_keeps_the_headers_and_drops_the_body() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let store = std::sync::Arc::new(crate::memory::MemoryStore::new());
+        store.seed().await.unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, build_router(store)).await.unwrap();
+        });
+
+        async fn raw(addr: std::net::SocketAddr, method: &str) -> String {
+            let mut sock = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let req = format!("{method} /api/health HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+            sock.write_all(req.as_bytes()).await.unwrap();
+            let mut buf = String::new();
+            sock.read_to_string(&mut buf).await.unwrap();
+            buf
+        }
+
+        let get = raw(addr, "GET").await;
+        let head = raw(addr, "HEAD").await;
+        server.abort();
+
+        let split = |res: &str| {
+            let (headers, body) = res.split_once("\r\n\r\n").expect("headers end");
+            (headers.to_lowercase(), body.to_string())
+        };
+
+        // Positive control: the same route over the same socket does send a
+        // body, so an empty HEAD body below is about HEAD and not about the
+        // reader.
+        let (get_headers, get_body) = split(&get);
+        assert!(get_headers.contains("200 ok"), "{get_headers}");
+        assert!(get_headers.contains("content-type: application/json; charset=utf-8"));
+        assert_eq!(get_body, r#"{"status":"ok"}"#);
+
+        let (head_headers, head_body) = split(&head);
+        assert!(head_headers.contains("405 method not allowed"), "{head_headers}");
+        assert!(head_headers.contains("content-type: application/json; charset=utf-8"));
+        assert!(head_headers.contains("allow: get"), "{head_headers}");
+        assert_eq!(head_body, "", "RFC 9110 forbids content in a HEAD response");
     }
 
     #[tokio::test]
@@ -286,6 +326,54 @@ mod tests {
 
         let bad = call(&app, "POST", "/api/resources/r_nope/requests", Some("u_linus"), Some("not json")).await;
         assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    }
+
+    /// Every authenticated route that reads a body, each with a caller who
+    /// fails an earlier check while sending a body that cannot parse. The
+    /// malformed body is what makes a row discriminate: a handler that
+    /// parsed first would answer 400 where the contract wants 401 or 403.
+    #[tokio::test]
+    async fn every_body_route_authenticates_and_checks_the_role_before_parsing() {
+        struct Route {
+            name: &'static str,
+            method: &'static str,
+            uri: &'static str,
+            admin_only: bool,
+        }
+        let routes = [
+            Route { name: "POST /api/members", method: "POST", uri: "/api/members", admin_only: true },
+            Route { name: "PUT /api/members/{id}/role", method: "PUT", uri: "/api/members/u_linus/role", admin_only: true },
+            Route { name: "POST /api/resources", method: "POST", uri: "/api/resources", admin_only: true },
+            Route { name: "POST /api/resources/{id}/requests", method: "POST", uri: "/api/resources/r_acme_pg/requests", admin_only: false },
+            Route { name: "POST /api/requests/{id}/comments", method: "POST", uri: "/api/requests/req_acme_1/comments", admin_only: false },
+        ];
+
+        let app = app().await;
+        let bad = Some("not json");
+        let mut problems: Vec<String> = Vec::new();
+
+        for r in routes {
+            let anon = call(&app, r.method, r.uri, None, bad).await;
+            if anon.status != StatusCode::UNAUTHORIZED {
+                problems.push(format!("{}: no actor gave {}", r.name, anon.status));
+            }
+
+            let member = call(&app, r.method, r.uri, Some("u_linus"), bad).await;
+            let want = if r.admin_only { StatusCode::FORBIDDEN } else { StatusCode::BAD_REQUEST };
+            if member.status != want {
+                problems.push(format!("{}: member gave {}, wanted {}", r.name, member.status, want));
+            }
+
+            // Positive control: an admin sending the same body reaches the
+            // 400, so the rows above are about order rather than about a
+            // route that refuses everything.
+            let admin = call(&app, r.method, r.uri, Some("u_ada"), bad).await;
+            if admin.status != StatusCode::BAD_REQUEST {
+                problems.push(format!("{}: admin gave {}, wanted 400", r.name, admin.status));
+            }
+        }
+
+        assert!(problems.is_empty(), "check precedence: {}", problems.join("; "));
     }
 
     #[tokio::test]
@@ -450,8 +538,14 @@ mod tests {
     async fn a_second_decommission_restamps_rather_than_conflicting() {
         let app = app().await;
         let first = call(&app, "POST", "/api/resources/r_acme_pg/decommission", Some("u_ada"), None).await;
+        // Without this the assert_ne below also passes when both calls
+        // 404 and both stamps are null.
+        assert_eq!(first.status, StatusCode::OK);
+        assert!(first.json()["decommission_at"].is_string());
+
         let second = call(&app, "POST", "/api/resources/r_acme_pg/decommission", Some("u_ada"), None).await;
         assert_eq!(second.status, StatusCode::OK);
+        assert!(second.json()["decommission_at"].is_string());
         // Different stamps, which only survives sub-second precision.
         assert_ne!(first.json()["decommission_at"], second.json()["decommission_at"]);
     }

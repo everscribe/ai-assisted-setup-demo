@@ -105,13 +105,19 @@ info:
 
     HEAD and OPTIONS are registered on no route and return 405. OPTIONS
     carries the same JSON body as any other method mismatch. HEAD
-    /api/health is a 405, not an empty 200, but for HEAD only the status
-    code and the Allow header are binding: RFC 9110 4.3.2 requires that a
-    server MUST NOT send content in a response to HEAD, so a conformant
-    HEAD response has no body and no conformance check may require one.
-    This needs pinning because Starlette and Express both route HEAD to
-    the GET handler automatically, and frameworks commonly answer OPTIONS
-    themselves; both behaviours must be turned off.
+    /api/health is a 405, not an empty 200, and no conformance check may
+    require a body from it: RFC 9110 4.3.2 requires that a server MUST NOT
+    send content in a response to HEAD, so a conformant HEAD response has
+    no body. Only the body is omitted. RFC 9110 9.3.2 keeps the rest, so a
+    HEAD response carries the same header fields the equivalent GET would
+    have carried, Content-Type included: a HEAD 405 sends the same Allow
+    and the same application/json; charset=utf-8 as the 405 a GET gets.
+    Build the ordinary response and let the HTTP layer drop the body for
+    HEAD, rather than hand-building a bodiless response, which loses the
+    headers that make HEAD worth asking. This needs pinning because
+    Starlette and Express both route HEAD to the GET handler
+    automatically, and frameworks commonly answer OPTIONS themselves; both
+    behaviours must be turned off.
 
     The error string in a 400 body is not normative. The Go app appends
     its JSON decoder's own message, which produces text no other
