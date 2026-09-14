@@ -832,10 +832,11 @@ x-ordering:
   timestamp-precision:
     description: >
       Seeded rows carry whole-second timestamps. Runtime-minted timestamps
-      must carry at least millisecond precision, which every runtime in use
-      already exceeds: Go emits microseconds, Node milliseconds, Rust and
-      Python finer. The floor exists because the conformance suite asserts
-      that a second decommission re-stamps decommission_at, and at
-      whole-second resolution a correct implementation would return the
-      same value twice and fail for being right. Comparison is still by
-      parsed instant, and any precision at or above the floor is accepted.
+      must carry at least millisecond precision. Of the runtimes in this
+      repo today, Go clears the floor by several orders of magnitude and
+      Node meets it exactly, so the floor costs neither port anything. The
+      floor exists because the conformance suite asserts that a second
+      decommission re-stamps decommission_at, and at whole-second
+      resolution a correct implementation would return the same value
+      twice and fail for being right. Comparison is still by parsed
+      instant, and any precision at or above the floor is accepted.
