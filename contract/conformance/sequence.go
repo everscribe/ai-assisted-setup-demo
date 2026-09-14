@@ -49,6 +49,15 @@ func Lifecycle() []Step {
 		{"unparseable body", "POST", "/api/resources/r_nope/requests", "u_linus", `{`},
 		{"role not trimmed", "PUT", "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`},
 
+		// Emails are not unique, so login has to say which of two users
+		// sharing one it returns. Inviting a duplicate of a seeded email
+		// and logging in with it is the only way the equality layer can
+		// see that rule. Both steps come after "members after invite" so
+		// no list comparison above them changes, and replaying the script
+		// only adds another duplicate, which the rule already covers.
+		{"invite a duplicate email", "POST", "/api/members", "u_ada", `{"name":"Ada Impostor","email":"ada@acme.test","role":"member"}`},
+		{"login with the duplicated email", "POST", "/api/login", "", `{"email":"ada@acme.test"}`},
+
 		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
 		{"method mismatch", "GET", "/api/login", "u_ada", ""},
 		{"logout", "POST", "/api/logout", "u_ada", ""},
