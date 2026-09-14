@@ -39,6 +39,16 @@ func Lifecycle() []Step {
 		{"decommission", "POST", "/api/resources/r_acme_s3/decommission", "u_ada", ""},
 		{"resources after changes", "GET", "/api/resources", "u_ada", ""},
 
+		// These six exist because the sequence otherwise uses only GET and
+		// POST, so six documented contract rules were never exercised and a
+		// single port diverging alone would have gone unnoticed.
+		{"head health", "HEAD", "/api/health", "u_ada", ""},
+		{"options resources", "OPTIONS", "/api/resources", "u_ada", ""},
+		{"trailing slash on a real path", "GET", "/api/resources/", "u_ada", ""},
+		{"trailing slash on an unknown path", "GET", "/api/no-such-route/", "u_ada", ""},
+		{"unparseable body", "POST", "/api/resources/r_nope/requests", "u_linus", `{`},
+		{"role not trimmed", "PUT", "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`},
+
 		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
 		{"method mismatch", "GET", "/api/login", "u_ada", ""},
 		{"logout", "POST", "/api/logout", "u_ada", ""},
