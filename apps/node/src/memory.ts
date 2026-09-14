@@ -63,11 +63,17 @@ export class MemoryStore implements Store {
     return { ...user };
   }
 
+  // Emails are not unique, so every match is collected and the same
+  // total order the list endpoints use decides: created_at asc, then
+  // id asc. A Map iterates in insertion order, which happens to agree
+  // today, but the rule is what the contract states so the rule is what
+  // is applied.
   async findUserByEmail(email: string): Promise<User> {
-    for (const user of this.users.values()) {
-      if (user.email === email) return { ...user };
-    }
-    throw ErrNotFound;
+    const hits = Array.from(this.users.values())
+      .filter((u) => u.email === email)
+      .sort(byCreatedAt("asc"));
+    if (hits.length === 0) throw ErrNotFound;
+    return { ...hits[0] };
   }
 
   async listOrgMembers(orgId: string): Promise<User[]> {

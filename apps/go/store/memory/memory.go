@@ -86,15 +86,29 @@ func (s *Store) GetUser(ctx context.Context, id string) (*models.User, error) {
 }
 
 // FindUserByEmail returns the user with the given email, or ErrNotFound.
+// Emails are not unique, so every match is collected and the same total
+// order the list endpoints use decides: created_at asc, then id asc.
+// Ranging the map and returning the first hit was nondeterministic once a
+// duplicate existed, because Go randomizes map iteration.
 func (s *Store) FindUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	var hits []*models.User
 	for _, u := range s.users {
 		if u.Email == email {
-			return u, nil
+			hits = append(hits, u)
 		}
 	}
-	return nil, store.ErrNotFound
+	if len(hits) == 0 {
+		return nil, store.ErrNotFound
+	}
+	sort.SliceStable(hits, func(i, j int) bool {
+		if hits[i].CreatedAt.Equal(hits[j].CreatedAt) {
+			return hits[i].ID < hits[j].ID
+		}
+		return hits[i].CreatedAt.Before(hits[j].CreatedAt)
+	})
+	return hits[0], nil
 }
 
 // ListOrgMembers returns every user in an organization, sorted by

@@ -334,6 +334,46 @@ mod tests {
         assert_eq!(u.role, "admin");
     }
 
+    /// The duplicate-email rule. Over HTTP a duplicate can only be minted
+    /// after the user it duplicates, so insertion order and created_at
+    /// order always agree and no conformance check can tell the sort from
+    /// a plain walk of the vec. Planting an older duplicate behind the
+    /// seeded user is what makes the sort load-bearing: without it this
+    /// returns u_ada.
+    #[tokio::test]
+    async fn duplicate_email_resolves_to_the_earliest_user() {
+        let s = MemoryStore::new();
+        s.seed().await.unwrap();
+
+        // Positive control: the lookup answers before any duplicate exists.
+        let seeded = s.find_user_by_email("ada@acme.test").await.unwrap();
+        assert_eq!(seeded.id, "u_ada");
+
+        let older = User {
+            id: "u_older".into(),
+            name: "Ada Elder".into(),
+            email: "ada@acme.test".into(),
+            role: "member".into(),
+            organization_id: "org_acme".into(),
+            created_at: chrono::DateTime::parse_from_rfc3339("2020-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        };
+        s.data.write().await.users.push(older.clone());
+        assert_eq!(s.find_user_by_email("ada@acme.test").await.unwrap().id, "u_older");
+
+        // Tied created_at, pushed last, so only the id tiebreak can win it.
+        s.data.write().await.users.push(User {
+            id: "u_aaa".into(),
+            name: "Ada Tie".into(),
+            ..older
+        });
+        assert_eq!(s.find_user_by_email("ada@acme.test").await.unwrap().id, "u_aaa");
+
+        let err = s.find_user_by_email("nobody@acme.test").await.unwrap_err();
+        assert!(matches!(err, StoreError::NotFound));
+    }
+
     #[tokio::test]
     async fn cross_tenant_resource_is_not_found() {
         let s = MemoryStore::new();

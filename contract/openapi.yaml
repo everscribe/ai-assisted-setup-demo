@@ -169,6 +169,17 @@ paths:
         Looks up a seeded user by email. No password; this is a demo.
         The frontend stores the returned user's id and sends it as
         X-User-ID on every later request.
+
+        Emails are not unique, because POST /api/members does not enforce
+        uniqueness, so this lookup can match more than one user. It
+        resolves to the first match under the same total order every list
+        endpoint uses, created_at ascending then id ascending. A duplicate
+        of a seeded email is always minted later, so the seeded user
+        always wins and the answer never changes between two runs against
+        the same data. Storage order must not decide this: ranging a hash
+        map and returning the first hit answers differently run to run in
+        any runtime that randomizes map iteration, which is what Go does
+        by design. Collect every match and order them.
       security: []
       requestBody:
         required: true
@@ -248,7 +259,8 @@ paths:
       description: >
         Admin only. Email uniqueness is not enforced: a duplicate email,
         including one already belonging to a seeded user, creates a
-        second user and returns 201.
+        second user and returns 201. POST /api/login says which of the
+        two an email then resolves to.
       requestBody:
         required: true
         content:
@@ -273,7 +285,18 @@ paths:
   /members/{id}:
     delete:
       summary: Remove a member
-      description: Admin only.
+      description: >
+        Admin only. Removal does not cascade. The user row goes and
+        nothing else moves: the access requests they opened and the
+        comments they wrote stay exactly as they were, still served by
+        the lists that held them, and requested_by and author_id still
+        name the removed id. No *_by or *_id field in any response schema
+        carries a referential guarantee, so an id that no longer resolves
+        to a user is a valid value rather than a broken row. Deleting the
+        history would be the surprising behaviour in an access-request
+        app, and there is no 409 on this route to refuse the removal with
+        either. The removed id stops authenticating immediately, so a
+        later request carrying it as X-User-ID is a 401.
       parameters:
         - $ref: '#/components/parameters/UserId'
       responses:
@@ -498,7 +521,13 @@ paths:
       description: >
         Admin only. Fails with 409 if the request is not currently
         approved, for example revoking an already-revoked request is
-        409 the same way.
+        409 the same way. Revoking sets revoked_by and revoked_at and
+        leaves decided_by and decided_at exactly as the approval wrote
+        them, so a revoked request still records who approved it and
+        when. Until now this was written down only by the shape of
+        req_globex_2 in contract/seed.json, which carries all four
+        fields; the rule is the prose, and the fixture is its worked
+        example.
       parameters:
         - $ref: '#/components/parameters/RequestId'
       responses:
@@ -685,11 +714,15 @@ components:
         status: {type: string, enum: [pending, approved, denied, revoked]}
         decided_by:
           type: string
-          description: The admin who approved or denied. Absent while pending.
+          description: >
+            The admin who approved or denied. Absent while pending, and
+            kept unchanged once the request is revoked.
         decided_at:
           type: string
           format: date-time
-          description: Absent while pending.
+          description: >
+            Absent while pending, and kept unchanged once the request is
+            revoked.
         revoked_by:
           type: string
           description: The admin who revoked. Present only once revoked.
