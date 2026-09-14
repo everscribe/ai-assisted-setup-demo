@@ -133,13 +133,18 @@ func TestCanonicalizeCollapsesInvalidBodyPrefix(t *testing.T) {
 // (openapi.yaml:122-124) without needing either app up. Two orderings of
 // the same set must canonicalize equal; a genuinely different set must
 // not, or the sort would be swallowing a missing or invented method
-// instead of just reordering.
+// instead of just reordering. A repeated method must also not collapse
+// to its deduplicated form: sorting is correct, deduplicating is not,
+// and a repeat is a real divergence in what a port registered.
 func TestCanonicalizeAllowIgnoresOrder(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, canonicalizeAllow("POST, GET"), canonicalizeAllow("GET, POST"))
 
 	require.NotEqual(t, canonicalizeAllow("GET, POST"), canonicalizeAllow("GET, POST, DELETE"),
 		"a missing or invented method must not canonicalize equal")
+
+	require.NotEqual(t, canonicalizeAllow("GET, GET, POST"), canonicalizeAllow("GET, POST"),
+		"a repeated method must not canonicalize equal to its deduplicated form")
 }
 
 // The four apps are compared to each other, not to a designated
