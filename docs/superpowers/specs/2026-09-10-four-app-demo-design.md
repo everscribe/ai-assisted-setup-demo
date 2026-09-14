@@ -352,8 +352,18 @@ tests.
 ### What the harness deliberately does not check
 
 The harness cannot catch every app being wrong the same way. Only cross-app
-equality polices behaviour, and equality by construction sees disagreement,
-not shared error. Seven documented contract rules were each violated in a
+equality polices behaviour, and equality by construction sees disagreement
+rather than shared error.
+
+For most of these rules the gap is wider than that, and worse. The lifecycle
+sequence uses only GET and POST, sends no trailing slash, and sends no
+malformed or padded body, so it never exercises them at all. That means even
+a SINGLE port diverging on its own goes unnoticed: a from-scratch Rust or
+Python app can get trailing-slash handling wrong, disagree with both shipped
+apps, and still ship green. Of the seven rules below only the `Allow` header
+is reachable today, through the one method-mismatch step.
+
+Seven documented contract rules were each violated in a
 scratch app with the whole suite passing: the `Allow` header, HEAD and
 OPTIONS routing, trailing-slash strictness, input trimming, check precedence,
 the stable 400 message text, and role coercion.
@@ -369,12 +379,29 @@ correctness problem this repo does not have.
 
 What matters here is only that the four apps AGREE, so that a divergence in
 instrumentation results is attributable to the skill rather than to the apps.
-Adding headers to the equality comparison buys most of the table's practical
-value at a fraction of its cost, and is Plan 4's Task 0.
 
-Percent-encoded path handling diverges between the two apps for the same
-reason and is likewise left alone: `/api/%6de` returns a user record on Go
-and 404 on Node, and nobody will type that at a demo.
+The cheap way to get that is steps, not headers. `Lifecycle()` is a literal
+slice with no state threading and `Response` already carries `Header`, so six
+added steps plus a header comparison make equality actually police six of the
+seven: HEAD and OPTIONS routing, trailing-slash strictness on both a real and
+an unknown path, check precedence and the stable 400 text via an unparseable
+body, the not-trimmed `role` rule, and `Allow`. All six are non-mutating in
+effect, since four are reads and the last two are rejected before reaching
+the store, so no seed exemption is needed. Only accepted-input trimming is
+left over, because exercising it creates a row and would need to sit after
+the existing creation steps to keep the later list comparisons stable.
+
+Six lines of table plus a header whitelist is cheaper than the thirty-row
+behaviour table that was rejected, and closes more than the header change
+alone would. That is Plan 4's Task 0.
+
+An accepted known divergence, recorded rather than fixed: `/api/%6de`
+returns a user record on Go and 404 on Node, because Gin reads `URL.Path`
+with `UseRawPath` off while Express matches the raw path. This is NOT another
+instance of the unchecked-rule argument above; it is a verified current
+disagreement on the one property this section says matters. It is waived
+because nobody will type that at a demo. Note it will grow rather than stay
+at two apps, since Rust and Python will each land on one side unpredictably.
 
 ### The harness survives instrumentation
 
@@ -555,12 +582,19 @@ Task 0 items 2 and 3 during Plan 2 rather than during Plan 3 triage.
 Then Express plus Svelte on 9002, which switches on the cross-app equality
 layer for the first time.
 
-**Plan 4: a two-item Task 0, then Rust and vanilla TS** on 9003. Task 0 adds
-`Content-Type` and `Allow` to the equality layer's comparison, which today
-compares status and body only so every header divergence is invisible; and it
-fixes `TestDecommissionIsIdempotentAndRestampsTheTimestamp`, which requires
-two timestamps 25ms apart to differ even though nothing pins sub-second
+**Plan 4: a three-item Task 0, then Rust and vanilla TS** on 9003. Task 0
+adds six steps to `Lifecycle()` exercising HEAD, OPTIONS, a trailing slash on
+both a real and an unknown path, an unparseable body, and an untrimmed
+`role`, because the sequence uses only GET and POST today and so never
+reaches six of the seven rules named above; it adds `Content-Type` and
+`Allow` to the equality comparison, which sees status and body only, so every
+header divergence is currently invisible; and it fixes
+`TestDecommissionIsIdempotentAndRestampsTheTimestamp`, which requires two
+timestamps 25ms apart to differ even though nothing pins sub-second
 precision, so a conformant second-resolution port fails it for being correct.
+
+The six steps come first in that list because they are what turns "the four
+apps agree" from an assertion into something the suite checks.
 
 **Plan 5: Python on 9004, paired
 with Vue**, the undocumented frontend and the stretch case, last on purpose.
