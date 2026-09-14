@@ -203,6 +203,36 @@ The committed test therefore also pushes two rows sharing a later
 listing, and asserts the full five-id sequence. That is the assertion the
 mutation breaks. The full mutation record is in the task report.
 
+Then I made the identical mistake in the test I added to cover the two
+`x-ordering.examples` sequences, and review caught it. `r_acme_pg`'s
+requests are already in file order `[req_acme_1, req_acme_4, req_acme_5]`
+and `req_acme_1`'s comments are already `[c_acme_1, c_acme_2, c_acme_3]`,
+so both worked examples reproduce themselves with no sort at all. Diagnosing
+the trap in someone else's test is evidently not the same as avoiding it in
+your own. Both lists now get a probe pair of their own, sharing an instant
+later than every seeded row in reverse id order, so insertion order and
+sorted order differ on the domain key and on the tiebreak at once. Four
+mutation runs are recorded in the task report.
+
+### Tenant scoping needed a test of its own
+
+Also from review: eleven of the twelve org-scoped methods had no scoping
+test. Only `resource_in_org` was covered, by the brief's
+`cross_tenant_resource_is_not_found`. Dropping the `organization_id` check
+from `request_in_org`, `request_in_org_mut`, `remove_member` and
+`update_member_role` left every test green, which is a poor state for the
+one invariant this repo exists to demonstrate.
+
+`every_org_scoped_method_refuses_a_cross_tenant_target` is table-driven over
+all twelve. Each row runs the call twice against a fresh seeded store: once
+with the owning org, which must succeed, and once with the other org, which
+must fail with exactly `NotFound`. The positive control is what stops a
+method that refuses everything from passing, and matching the variant rather
+than merely "it errored" is what stops a `Forbidden` from passing, since
+`Forbidden` would leak the existence of the row the 404 rule exists to hide.
+Failures are collected rather than asserted one at a time, so one run names
+every method that leaked.
+
 ### `#![allow(dead_code)]` in `main.rs`
 
 The store is the whole crate today and `main` is still the `cargo init`

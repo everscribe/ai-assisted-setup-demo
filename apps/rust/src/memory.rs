@@ -378,18 +378,110 @@ mod tests {
         );
     }
 
+    /// The instant the probe rows share. Later than every seeded row, so a
+    /// descending order must put them first and an ascending one last.
+    fn probe_instant() -> chrono::DateTime<Utc> {
+        chrono::DateTime::parse_from_rfc3339("2026-03-20T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc)
+    }
+
     #[tokio::test]
     async fn requests_and_comments_match_the_worked_examples() {
         let s = MemoryStore::new();
         s.seed().await.unwrap();
 
+        // The seeded rows alone prove nothing: their tied pairs already sit
+        // in id-ascending file order, so no sort at all reproduces both
+        // worked examples. Each probe pair shares an instant in reverse id
+        // order, and sits on the far side of the seeded rows from where
+        // insertion order leaves it.
+        {
+            let mut d = s.data.write().await;
+            for id in ["req_acme_zz", "req_acme_aa"] {
+                d.requests.push(AccessRequest {
+                    id: id.into(),
+                    resource_id: "r_acme_pg".into(),
+                    organization_id: "org_acme".into(),
+                    requested_by: "u_linus".into(),
+                    reason: "tiebreak-probe".into(),
+                    status: "pending".into(),
+                    decided_by: None,
+                    decided_at: None,
+                    revoked_by: None,
+                    revoked_at: None,
+                    created_at: probe_instant(),
+                });
+            }
+            for id in ["c_acme_zz", "c_acme_aa"] {
+                d.comments.push(Comment {
+                    id: id.into(),
+                    request_id: "req_acme_1".into(),
+                    organization_id: "org_acme".into(),
+                    author_id: "u_linus".into(),
+                    body: "tiebreak-probe".into(),
+                    created_at: probe_instant(),
+                });
+            }
+        }
+
+        // created_at descending, then id ascending.
         let rows = s.list_resource_requests("org_acme", "r_acme_pg").await.unwrap();
         let ids: Vec<_> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, vec!["req_acme_1", "req_acme_4", "req_acme_5"]);
+        assert_eq!(
+            ids,
+            vec!["req_acme_aa", "req_acme_zz", "req_acme_1", "req_acme_4", "req_acme_5"]
+        );
 
+        // created_at ascending, then id ascending.
         let rows = s.list_request_comments("org_acme", "req_acme_1").await.unwrap();
         let ids: Vec<_> = rows.iter().map(|c| c.id.as_str()).collect();
-        assert_eq!(ids, vec!["c_acme_1", "c_acme_2", "c_acme_3"]);
+        assert_eq!(
+            ids,
+            vec!["c_acme_1", "c_acme_2", "c_acme_3", "c_acme_aa", "c_acme_zz"]
+        );
+    }
+
+    /// Every method that takes an org_id and a target id, with the owning org
+    /// first as a positive control so a method that refuses everything fails
+    /// too. Each row gets a fresh store because several of them mutate.
+    #[tokio::test]
+    async fn every_org_scoped_method_refuses_a_cross_tenant_target() {
+        let mut problems: Vec<String> = Vec::new();
+
+        macro_rules! check {
+            ($name:literal, |$s:ident, $org:ident| $call:expr) => {{
+                let $s = MemoryStore::new();
+                $s.seed().await.unwrap();
+                let $org = "org_acme";
+                if let Err(e) = $call.await.map(|_| ()) {
+                    problems.push(format!("{}: owning org refused with {:?}", $name, e));
+                }
+
+                let $s = MemoryStore::new();
+                $s.seed().await.unwrap();
+                let $org = "org_globex";
+                match $call.await.map(|_| ()) {
+                    Err(StoreError::NotFound) => {}
+                    other => problems.push(format!("{}: cross-tenant gave {:?}", $name, other)),
+                }
+            }};
+        }
+
+        check!("remove_member", |s, org| s.remove_member(org, "u_linus"));
+        check!("update_member_role", |s, org| s.update_member_role(org, "u_linus", "admin"));
+        check!("get_resource", |s, org| s.get_resource(org, "r_acme_pg"));
+        check!("decommission_resource", |s, org| s.decommission_resource(org, "r_acme_pg"));
+        check!("list_resource_requests", |s, org| s.list_resource_requests(org, "r_acme_pg"));
+        check!("request_access", |s, org| s.request_access(org, "r_acme_pg", "u_linus", "why"));
+        check!("get_request", |s, org| s.get_request(org, "req_acme_1"));
+        check!("approve_request", |s, org| s.approve_request(org, "req_acme_1", "u_ada"));
+        check!("deny_request", |s, org| s.deny_request(org, "req_acme_1", "u_ada"));
+        check!("revoke_request", |s, org| s.revoke_request(org, "req_acme_2", "u_ada"));
+        check!("list_request_comments", |s, org| s.list_request_comments(org, "req_acme_1"));
+        check!("add_comment", |s, org| s.add_comment(org, "req_acme_1", "u_linus", "hi"));
+
+        assert!(problems.is_empty(), "tenant scoping: {}", problems.join("; "));
     }
 
     #[tokio::test]
