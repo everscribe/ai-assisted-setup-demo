@@ -74,6 +74,16 @@ func TestValidateResponseHandlesUndeclaredRoutes(t *testing.T) {
 		jsonResp(404, `{"message":"nope"}`)), "a 404 whose body is not an Error must fail")
 	require.Error(t, s.ValidateResponse(ctx, http.MethodGet, "/api/no-such-route",
 		jsonResp(200, `{}`)), "an unroutable path returning 200 must fail")
+
+	// RFC 9110 4.3.2: a server MUST NOT send content in response to HEAD,
+	// so a bodiless 405 for HEAD must validate.
+	require.NoError(t, s.ValidateResponse(ctx, http.MethodHead, "/api/health",
+		jsonResp(405, "")), "a bodiless HEAD 405 must validate")
+
+	// The exemption is about the body, not a blanket pass for HEAD: a
+	// status outside the accepted set must still fail.
+	require.Error(t, s.ValidateResponse(ctx, http.MethodHead, "/api/health",
+		jsonResp(200, "")), "a HEAD response with an unaccepted status must still fail")
 }
 
 func TestValidateResponseAcceptsBodilessNoContent(t *testing.T) {

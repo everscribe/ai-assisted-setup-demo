@@ -89,6 +89,22 @@ func canonicalize(v any) any {
 	}
 }
 
+// TestCanonicalizeCollapsesInvalidBodyPrefix pins the invalid body:
+// exemption without needing either app up. Two decoder-specific
+// messages must collapse to the same value; a genuinely different
+// message must not, or the collapse would be swallowing every error
+// rather than just this one documented case.
+func TestCanonicalizeCollapsesInvalidBodyPrefix(t *testing.T) {
+	t.Parallel()
+	goBody := map[string]any{"error": "invalid body: json: cannot unmarshal number into Go struct field .email of type string"}
+	nodeBody := map[string]any{"error": "invalid body"}
+	require.Equal(t, canonicalize(goBody), canonicalize(nodeBody))
+
+	other := map[string]any{"error": "role must be admin or member"}
+	require.NotEqual(t, canonicalize(goBody), canonicalize(other),
+		"a genuinely different error message must not collapse to the same value")
+}
+
 // The four apps are compared to each other, not to a designated
 // reference, so no app's runtime output is privileged and drift is
 // caught wherever it appears. Skipped with fewer than two apps up,
