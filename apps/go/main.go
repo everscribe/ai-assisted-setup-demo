@@ -25,6 +25,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/handlers"
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store/memory"
@@ -65,12 +66,30 @@ func main() {
 // answers a bare GET /api with a 301 and an HTML body, which is the same
 // existence oracle the router closes for trailing slashes, on an
 // otherwise all-JSON API.
-func newRootMux(api, static http.Handler) *http.ServeMux {
+//
+// The empty-segment guard wraps the mux rather than living inside it:
+// ServeMux cleans the path itself, so /api//me never reaches a handler,
+// it 301s to /api/me. Same leak, one level up.
+func newRootMux(api, static http.Handler) http.Handler {
 	root := http.NewServeMux()
 	root.Handle("/api", api)
 	root.Handle("/api/", api)
 	root.Handle("/", static)
-	return root
+	return rejectEmptySegments(root)
+}
+
+// rejectEmptySegments answers the API's own JSON 404 for any path with
+// an empty segment, before routing sees it.
+func rejectEmptySegments(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.EscapedPath(), "//") {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"not found"}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newStaticHandler() (http.Handler, error) {

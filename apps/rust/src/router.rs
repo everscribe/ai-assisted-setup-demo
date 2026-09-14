@@ -8,7 +8,9 @@
 //! fallback that sets Allow itself. The header's order is unspecified, so
 //! these read in the order the contract lists them.
 
+use axum::extract::Request;
 use axum::http::{header, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{delete, on, post, put, MethodFilter, MethodRouter};
 use axum::Router;
@@ -34,12 +36,23 @@ fn closed(methods: MethodRouter<AppState>, allow: &'static str) -> MethodRouter<
         .fallback(move || async move { method_not_allowed(allow) })
 }
 
+/// A path with an empty segment is the API's own JSON 404. This runs
+/// before routing because nest_service collapses //me to /me, which
+/// answered 200 where Node answered 404 and Go redirected.
+async fn reject_empty_segments(req: Request, next: Next) -> Response {
+    if req.uri().path().contains("//") {
+        return h::not_found().await;
+    }
+    next.run(req).await
+}
+
 pub fn build_router(store: Arc<dyn Store>) -> Router {
     // Nested as a service so that /api and /api/ reach the API's own JSON
     // 404 rather than a redirect from the mount.
     Router::new()
         .nest_service("/api", api(store))
         .fallback(h::not_found)
+        .layer(middleware::from_fn(reject_empty_segments))
 }
 
 fn api(store: AppState) -> Router {
@@ -415,6 +428,30 @@ mod tests {
             let res = call(&app, "GET", uri, Some("u_ada"), None).await;
             assert_eq!(res.status, StatusCode::NOT_FOUND, "{uri}");
             assert_eq!(res.body, r#"{"error":"not found"}"#, "{uri}");
+        }
+    }
+
+    /// A path with an empty segment must not be routed as if the empty
+    /// segment were not there. nest_service collapsed /api//me to /me
+    /// and answered 200 with Ada's record.
+    #[tokio::test]
+    async fn an_empty_path_segment_is_a_json_404() {
+        let app = app().await;
+
+        // Positive control: the same path without the empty segment.
+        let ok = call(&app, "GET", "/api/me", Some("u_ada"), None).await;
+        assert_eq!(ok.status, StatusCode::OK);
+        assert_eq!(ok.json()["id"], "u_ada");
+
+        for uri in ["/api//me", "/api//resources", "/api/resources//", "//api/me"] {
+            let res = call(&app, "GET", uri, Some("u_ada"), None).await;
+            assert_eq!(res.status, StatusCode::NOT_FOUND, "{uri}");
+            assert_eq!(res.body, r#"{"error":"not found"}"#, "{uri}");
+            assert_eq!(
+                res.header("content-type").as_deref(),
+                Some("application/json; charset=utf-8"),
+                "{uri}"
+            );
         }
     }
 

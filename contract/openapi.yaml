@@ -154,6 +154,18 @@ info:
     its outer mux for exactly this reason, because registering only the
     subtree left the mux answering 301 with an HTML body.
 
+    A path containing an empty segment is a 404 from the API's own JSON
+    handler, for the same reason and in the same class. GET /api//me is
+    {"error": "not found"} with a 404, never Ada's record and never a
+    redirect to /api/me, and so is GET /api/resources// and any other
+    path with two consecutive slashes. Reject it before routing sees it:
+    left to a framework, the three ports here answered three different
+    ways, Go redirecting 301 with an HTML body from net/http's ServeMux,
+    which cleans the path, Rust answering 200 because axum's
+    nest_service collapsed //me to /me, and only Node answering 404.
+    A single trailing slash is not an empty segment; it is the
+    trailing-slash rule above, and it has the same 404 answer anyway.
+
     Paths are case sensitive, for the same reason. GET /api/ME is a 404
     identical to GET /api/no-such-route, never Ada's record, and the
     rule applies at the mount too: GET /API/me does not reach the API.
