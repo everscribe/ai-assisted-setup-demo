@@ -100,6 +100,11 @@ func (s *Spec) validateUndeclared(method, path string, resp *Response, routeErr 
 	if resp.Status != http.StatusNotFound && resp.Status != http.StatusMethodNotAllowed {
 		return fmt.Errorf("no route in contract for %s %s (status %d): %w", method, path, resp.Status, routeErr)
 	}
+	// RFC 9110 4.3.2: a server MUST NOT send content in a response to
+	// HEAD. Status is already checked above; there is no body to parse.
+	if method == http.MethodHead {
+		return nil
+	}
 	schemaRef, ok := s.doc.Components.Schemas["Error"]
 	if !ok {
 		return fmt.Errorf("contract has no Error schema")

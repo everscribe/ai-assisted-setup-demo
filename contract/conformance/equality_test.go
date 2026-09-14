@@ -6,9 +6,21 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+)
+
+// invalidBodyPrefix is the language-specific decoder text openapi.yaml
+// (around lines 113-119) says is not normative: only the 400 status is
+// binding, and "no conformance check may match on a message that begins
+// 'invalid body:'". Collapsed to invalidBodyCanonical before two apps'
+// error bodies are compared, so this comparator does not itself become
+// such a check.
+const (
+	invalidBodyPrefix    = "invalid body:"
+	invalidBodyCanonical = "invalid body"
 )
 
 // tsPlaceholder matches one of Normalizer's $ts1, $ts2, ... values
@@ -47,6 +59,12 @@ func canonicalize(v any) any {
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
+			if k == "error" {
+				if s, ok := val.(string); ok && strings.HasPrefix(s, invalidBodyPrefix) {
+					out[k] = invalidBodyCanonical
+					continue
+				}
+			}
 			out[k] = canonicalize(val)
 		}
 		return out

@@ -103,12 +103,15 @@ info:
     timestamps minted at runtime, on records the seed does not cover,
     may carry a fractional part; its digit count is not specified.
 
-    HEAD and OPTIONS are registered on no route and return 405 with the
-    same JSON body as any other method mismatch. HEAD /api/health is a
-    405, not an empty 200. This needs pinning because Starlette and
-    Express both route HEAD to the GET handler automatically, and
-    frameworks commonly answer OPTIONS themselves; both behaviours must
-    be turned off.
+    HEAD and OPTIONS are registered on no route and return 405. OPTIONS
+    carries the same JSON body as any other method mismatch. HEAD
+    /api/health is a 405, not an empty 200, but for HEAD only the status
+    code and the Allow header are binding: RFC 9110 4.3.2 requires that a
+    server MUST NOT send content in a response to HEAD, so a conformant
+    HEAD response has no body and no conformance check may require one.
+    This needs pinning because Starlette and Express both route HEAD to
+    the GET handler automatically, and frameworks commonly answer OPTIONS
+    themselves; both behaviours must be turned off.
 
     The error string in a 400 body is not normative. The Go app appends
     its JSON decoder's own message, which produces text no other
