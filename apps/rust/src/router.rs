@@ -575,8 +575,10 @@ mod tests {
     async fn a_second_decommission_restamps_rather_than_conflicting() {
         let app = app().await;
         let first = call(&app, "POST", "/api/resources/r_acme_pg/decommission", Some("u_ada"), None).await;
-        // Without this the assert_ne below also passes when both calls
-        // 404 and both stamps are null.
+        // Without this the assert_ne below passes vacuously in the
+        // asymmetric case: the first call 404s to a null stamp while
+        // the second succeeds to a string, and null differs from a
+        // string for free.
         assert_eq!(first.status, StatusCode::OK);
         assert!(first.json()["decommission_at"].is_string());
 

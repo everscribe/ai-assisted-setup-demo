@@ -114,9 +114,16 @@ info:
     local time, and never a separator other than T. Every timestamp in
     contract/seed.json has whole-second precision with no fractional
     part, so an implementation that appends .000 or writes +00:00 fails
-    the seed comparison even though it names the same instant. Only
-    timestamps minted at runtime, on records the seed does not cover,
-    may carry a fractional part; its digit count is not specified.
+    the seed comparison even though it names the same instant.
+    Timestamps minted at runtime, on records the seed does not cover,
+    are the opposite: they must carry a fractional part, because
+    x-ordering.timestamp-precision at the end of this file puts a floor
+    of at least millisecond precision on them. Any precision at or above
+    that floor is accepted and the digit count above it is not
+    specified. Read that entry for why the floor is there: a port
+    written to this paragraph alone can emit whole-second runtime stamps
+    and then fail TestDecommissionIsIdempotentAndRestampsTheTimestamp
+    for being right, which is the failure the floor exists to prevent.
 
     HEAD and OPTIONS are registered on no route and return 405. OPTIONS
     carries the same JSON body as any other method mismatch. HEAD
