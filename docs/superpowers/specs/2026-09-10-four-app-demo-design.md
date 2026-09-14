@@ -349,6 +349,33 @@ The normalizer is the one piece of real logic in the harness and the one
 place where a bug would produce false confidence. It gets its own unit
 tests.
 
+### What the harness deliberately does not check
+
+The harness cannot catch every app being wrong the same way. Only cross-app
+equality polices behaviour, and equality by construction sees disagreement,
+not shared error. Seven documented contract rules were each violated in a
+scratch app with the whole suite passing: the `Allow` header, HEAD and
+OPTIONS routing, trailing-slash strictness, input trimming, check precedence,
+the stable 400 message text, and role coercion.
+
+A machine-readable behaviour table in the contract, iterated by the harness,
+would close that. It was designed and rejected. These are demo apps whose
+only job is to be a realistic target for the hosted instrument flow and a
+repo someone can play with; they never run in production and have no
+consumer that depends on their API hygiene. If all four apps omit the `Allow`
+header identically, nothing breaks and the instrument agent does not care.
+Thirty table rows enforcing rules nobody exercises is machinery for a
+correctness problem this repo does not have.
+
+What matters here is only that the four apps AGREE, so that a divergence in
+instrumentation results is attributable to the skill rather than to the apps.
+Adding headers to the equality comparison buys most of the table's practical
+value at a fraction of its cost, and is Plan 4's Task 0.
+
+Percent-encoded path handling diverges between the two apps for the same
+reason and is likewise left alone: `/api/%6de` returns a user record on Go
+and 404 on Node, and nobody will type that at a demo.
+
 ### The harness survives instrumentation
 
 The harness asserts app behaviour and knows nothing about Everscribe, so it
@@ -528,7 +555,14 @@ Task 0 items 2 and 3 during Plan 2 rather than during Plan 3 triage.
 Then Express plus Svelte on 9002, which switches on the cross-app equality
 layer for the first time.
 
-**Plan 4: Rust and vanilla TS** on 9003. **Plan 5: Python on 9004, paired
+**Plan 4: a two-item Task 0, then Rust and vanilla TS** on 9003. Task 0 adds
+`Content-Type` and `Allow` to the equality layer's comparison, which today
+compares status and body only so every header divergence is invisible; and it
+fixes `TestDecommissionIsIdempotentAndRestampsTheTimestamp`, which requires
+two timestamps 25ms apart to differ even though nothing pins sub-second
+precision, so a conformant second-resolution port fails it for being correct.
+
+**Plan 5: Python on 9004, paired
 with Vue**, the undocumented frontend and the stretch case, last on purpose.
 FastAPI itself is documented; `examples/{react,svelte,vanilla}-python.md`
 all exist. Vue is the uncharted half, and saying so keeps a Plan 5 failure
