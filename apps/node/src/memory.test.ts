@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryStore } from "./memory.js";
-import type { User } from "./models.js";
+import type { Comment, Resource, User } from "./models.js";
 import { ErrNotFound } from "./store.js";
 
 describe("MemoryStore", () => {
@@ -19,11 +19,87 @@ describe("MemoryStore", () => {
     await expect(s.getResource("org_acme", "r_globex_k8s")).rejects.toBe(ErrNotFound);
   });
 
+  // The instant every probe row shares. Later than every seeded row, so
+  // a descending order must put the probes first and an ascending one
+  // last.
+  const PROBE_AT = "2026-03-20T12:00:00Z";
+
+  // The seeded rows alone prove nothing about ordering: every tied pair
+  // already sits in id-ascending file order, and a Map iterates in
+  // insertion order, so no sort at all reproduces the declared order.
+  // Each probe pair below shares an instant and is inserted in reverse
+  // id order, which only a real sort can put right.
   it("orders resources by created_at then id", async () => {
     const s = new MemoryStore();
     await s.seed();
+
+    const resources = (s as unknown as { resources: Map<string, Resource> }).resources;
+    for (const id of ["r_acme_zz", "r_acme_aa"]) {
+      resources.set(id, {
+        id,
+        name: "tiebreak-probe",
+        description: "",
+        sensitivity: "internal",
+        organization_id: "org_acme",
+        registered_by: "u_ada",
+        created_at: PROBE_AT,
+      });
+    }
+
     const rows = await s.listOrgResources("org_acme");
-    expect(rows.map((r) => r.id)).toEqual(["r_acme_pg", "r_acme_s3", "r_acme_stripe"]);
+    expect(rows.map((r) => r.id)).toEqual([
+      "r_acme_pg",
+      "r_acme_s3",
+      "r_acme_stripe",
+      "r_acme_aa",
+      "r_acme_zz",
+    ]);
+  });
+
+  it("orders members by created_at then id", async () => {
+    const s = new MemoryStore();
+    await s.seed();
+
+    const users = (s as unknown as { users: Map<string, User> }).users;
+    for (const id of ["u_acme_zz", "u_acme_aa"]) {
+      users.set(id, {
+        id,
+        name: "Tiebreak Probe",
+        email: `${id}@acme.test`,
+        role: "member",
+        organization_id: "org_acme",
+        created_at: PROBE_AT,
+      });
+    }
+
+    const rows = await s.listOrgMembers("org_acme");
+    expect(rows.map((u) => u.id)).toEqual(["u_ada", "u_linus", "u_acme_aa", "u_acme_zz"]);
+  });
+
+  it("orders comments by created_at then id", async () => {
+    const s = new MemoryStore();
+    await s.seed();
+
+    const comments = (s as unknown as { comments: Map<string, Comment> }).comments;
+    for (const id of ["c_acme_zz", "c_acme_aa"]) {
+      comments.set(id, {
+        id,
+        request_id: "req_acme_1",
+        organization_id: "org_acme",
+        author_id: "u_linus",
+        body: "tiebreak-probe",
+        created_at: PROBE_AT,
+      });
+    }
+
+    const rows = await s.listRequestComments("org_acme", "req_acme_1");
+    expect(rows.map((c) => c.id)).toEqual([
+      "c_acme_1",
+      "c_acme_2",
+      "c_acme_3",
+      "c_acme_aa",
+      "c_acme_zz",
+    ]);
   });
 
   // The duplicate-email rule. Over HTTP a duplicate can only be minted
@@ -79,12 +155,20 @@ describe("MemoryStore", () => {
     expect(revoked.revoked_at).toBeTruthy();
   });
 
+  // Re-stamping, not just stamping: a store that returned the first
+  // stamp unchanged passed while both assertions were toBeTruthy. The
+  // wait is because this clock has millisecond resolution, so two calls
+  // in the same millisecond would stamp the same instant honestly.
   it("decommissions idempotently, re-stamping decommission_at", async () => {
     const s = new MemoryStore();
     await s.seed();
     const first = await s.decommissionResource("org_acme", "r_acme_pg");
     expect(first.decommission_at).toBeTruthy();
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
     const second = await s.decommissionResource("org_acme", "r_acme_pg");
     expect(second.decommission_at).toBeTruthy();
+    expect(second.decommission_at).not.toBe(first.decommission_at);
   });
 });
