@@ -41,7 +41,7 @@ func RequestAccess(s store.Store) gin.HandlerFunc {
 		var in struct {
 			Reason string `json:"reason"`
 		}
-		if err := c.ShouldBindJSON(&in); err != nil {
+		if err := bindJSON(c, &in); err != nil {
 			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}
@@ -158,7 +158,7 @@ func AddComment(s store.Store) gin.HandlerFunc {
 		var in struct {
 			Body string `json:"body"`
 		}
-		if err := c.ShouldBindJSON(&in); err != nil {
+		if err := bindJSON(c, &in); err != nil {
 			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}

@@ -45,7 +45,7 @@ func InviteMember(s store.Store) gin.HandlerFunc {
 			Email string `json:"email"`
 			Role  string `json:"role"`
 		}
-		if err := c.ShouldBindJSON(&in); err != nil {
+		if err := bindJSON(c, &in); err != nil {
 			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}
@@ -103,7 +103,7 @@ func ChangeMemberRole(s store.Store) gin.HandlerFunc {
 		var in struct {
 			Role string `json:"role"`
 		}
-		if err := c.ShouldBindJSON(&in); err != nil {
+		if err := bindJSON(c, &in); err != nil {
 			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}

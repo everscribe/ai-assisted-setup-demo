@@ -49,7 +49,7 @@ func RegisterResource(s store.Store) gin.HandlerFunc {
 			Description string `json:"description"`
 			Sensitivity string `json:"sensitivity"`
 		}
-		if err := c.ShouldBindJSON(&in); err != nil {
+		if err := bindJSON(c, &in); err != nil {
 			fail(c, http.StatusBadRequest, "invalid body: "+err.Error())
 			return
 		}

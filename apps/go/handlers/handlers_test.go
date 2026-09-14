@@ -179,3 +179,58 @@ func TestRequiredFieldsAreTrimmed(t *testing.T) {
 	w = do(t, r, http.MethodPut, "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// A field name is matched byte for byte. encoding/json matches
+// case-insensitively, so Go was the one app where {"Email": ...} logged
+// a user in and {"ROLE":"admin"} promoted one. A case variant is an
+// unknown field, and unknown fields are ignored, so each case below must
+// answer exactly as the empty object does.
+func TestFieldNamesAreMatchedExactly(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, method, path, actor, variant, wantErr string
+	}{
+		{"login Email", http.MethodPost, "/api/login", "", `{"Email":"ada@acme.test"}`, "email required"},
+		{"login EMAIL", http.MethodPost, "/api/login", "", `{"EMAIL":"ada@acme.test"}`, "email required"},
+		{"login eMaIl", http.MethodPost, "/api/login", "", `{"eMaIl":"ada@acme.test"}`, "email required"},
+		{"role ROLE", http.MethodPut, "/api/members/u_linus/role", "u_ada", `{"ROLE":"admin"}`, "role must be admin or member"},
+		{"comment BODY", http.MethodPost, "/api/requests/req_acme_1/comments", "u_ada", `{"BODY":"x"}`, "body required"},
+		{"resource Name", http.MethodPost, "/api/resources", "u_ada", `{"Name":"vault"}`, "name required"},
+		{"member NAME EMAIL", http.MethodPost, "/api/members", "u_ada", `{"NAME":"B","EMAIL":"b@acme.test","role":"member"}`, "name and email required"},
+		{"request Reason", http.MethodPost, "/api/resources/r_acme_pg/requests", "u_linus", `{"Reason":"audit"}`, "reason required"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newRouter(t)
+
+			w := do(t, r, tc.method, tc.path, tc.actor, tc.variant)
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.JSONEq(t, `{"error":"`+tc.wantErr+`"}`, w.Body.String())
+
+			// The case variant must answer as an absent field does, not
+			// as some new error kind of its own.
+			empty := do(t, r, tc.method, tc.path, tc.actor, `{}`)
+			require.Equal(t, empty.Code, w.Code)
+			require.JSONEq(t, empty.Body.String(), w.Body.String())
+		})
+	}
+
+	// A case variant must leave state alone, not just answer 400.
+	r := newRouter(t)
+	w := do(t, r, http.MethodPut, "/api/members/u_linus/role", "u_ada", `{"ROLE":"admin"}`)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	w = do(t, r, http.MethodGet, "/api/me", "u_linus", "")
+	var linus map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &linus))
+	require.Equal(t, "member", linus["role"], "a case-variant role must not promote anyone")
+
+	// Positive controls: the exact name still binds, and a genuinely
+	// unknown field is still ignored rather than rejected.
+	w = do(t, r, http.MethodPost, "/api/login", "", `{"email":"ada@acme.test"}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	w = do(t, r, http.MethodPost, "/api/login", "", `{"email":"ada@acme.test","bogus":1,"Email":"nobody@acme.test"}`)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"id":"u_ada"`)
+}

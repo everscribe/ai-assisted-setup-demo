@@ -9,8 +9,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"reflect"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,6 +41,61 @@ func failStore(c *gin.Context, err error) {
 	default:
 		fail(c, http.StatusInternalServerError, err.Error())
 	}
+}
+
+// bindJSON decodes a request body into out, matching field names byte
+// for byte. encoding/json matches case-insensitively, so ShouldBindJSON
+// would fill Email from {"Email": ...} where Node and Rust see a field
+// they do not know. Keys that do not match a tag exactly are dropped
+// rather than rejected, because the contract ignores unknown fields: a
+// case variant answers exactly as an absent field does.
+func bindJSON(c *gin.Context, out any) error {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	known := make(map[string]json.RawMessage, len(fields))
+	for _, name := range jsonFieldNames(out) {
+		if v, ok := fields[name]; ok {
+			known[name] = v
+		}
+	}
+	body, err := json.Marshal(known)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
+
+// jsonFieldNames lists the json tag names of out's exported fields.
+func jsonFieldNames(out any) []string {
+	t := reflect.TypeOf(out)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || t.Kind() != reflect.Struct {
+		return nil
+	}
+	names := make([]string, 0, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if name == "-" {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 // actor resolves X-User-ID. Handlers call requireActor instead.

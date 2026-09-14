@@ -86,6 +86,21 @@ info:
     are the opposite and stay strict: a response carrying a field its
     schema does not declare is a conformance failure.
 
+    Field names are matched byte for byte, and a key that matches only
+    case-insensitively is one of those unknown fields. {"Email": "x"},
+    {"EMAIL": "x"} and {"eMaIl": "x"} on POST /api/login are each
+    ignored, so each answers exactly as {} does:
+    {"error": "email required"} with a 400, never a login. The same
+    holds on every route, so {"ROLE": "admin"} on PUT
+    /api/members/{id}/role is {"error": "role must be admin or member"}
+    with a 400 and promotes nobody. This sits on the seam between the
+    ignore-unknown-fields rule above and the case-sensitive path rule
+    below, and it needs pinning because Go's encoding/json matches field
+    names case-insensitively by default, which no other runtime here
+    does: a port built on it must drop the case variant rather than bind
+    it. A case variant is ignored, not rejected, so it never produces an
+    error kind of its own.
+
     Two fields are pointedly not trimmed. The email on POST /api/login
     is matched exactly, so " ada@acme.test " is
     {"error": "no user with that email"} with a 401, not a login, while
