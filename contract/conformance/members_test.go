@@ -10,8 +10,12 @@ import (
 // The two rules below were silent in the contract until this task: all
 // three apps agreed, and nothing written down said what they agreed on,
 // so a fourth port could differ and be within its rights. openapi.yaml
-// now states both, and these are what stop the statement from being
-// prose no run ever reads.
+// now states both.
+//
+// The no-cascade rule is fully pinned here. The duplicate-email rule is
+// only half pinned here, for the reason its own comment gives: this layer
+// can see that the apps agree, not that they agree for the stated reason.
+// The stores carry the other half.
 
 // TestRemovingAMemberLeavesTheirHistory pins the no-cascade rule on
 // DELETE /api/members/{id}: the user row goes, the rows that point at it
@@ -79,18 +83,32 @@ func TestRemovingAMemberLeavesTheirHistory(t *testing.T) {
 	}
 }
 
-// TestDuplicateEmailLoginResolvesToTheEarliestUser pins which user a
-// duplicated email resolves to at POST /api/login: the first under the
-// same total order the list endpoints use, created_at ascending then id
-// ascending, which is the seeded user.
+// TestAppsAgreeWhichUserADuplicateEmailResolvesTo pins that every app
+// answers POST /api/login with the same user when the email matches more
+// than one, and that the answer stays put as duplicates accumulate. For
+// the seeded fixture that answer is u_ada.
 //
-// This one was not merely undocumented. The Go app resolved it by
-// ranging a map and returning the first hit, and Go randomizes map
-// iteration, so its answer changed run to run once a duplicate existed.
-// The lifecycle now invites a duplicate and logs in with it, so the
-// equality layer sees the rule too; this is what says the shared answer
-// is the right one rather than merely shared.
-func TestDuplicateEmailLoginResolvesToTheEarliestUser(t *testing.T) {
+// What this does NOT pin is the ordering rule openapi.yaml states for
+// that lookup, created_at ascending then id ascending. It cannot. Over
+// HTTP a duplicate can only be minted after the user it duplicates, so
+// the seeded row is always both the earliest by created_at and the first
+// in whatever order a store happens to iterate. A store doing no
+// ordering at all passes this test, and so does one keyed on insertion
+// order. Observed, not assumed: deleting the sort from apps/node's
+// findUserByEmail leaves this test and cross-app equality green.
+//
+// The ordering rule is pinned where it can be, in each store's own
+// suite, by planting a duplicate older than the seeded user, which no
+// route can do:
+//
+//   - apps/go/store/memory/memory_internal_test.go, TestDuplicateEmailPrefersTheOlderRow
+//   - apps/node/src/memory.test.ts, "resolves a duplicate email to the earliest user"
+//   - apps/rust/src/memory.rs, duplicate_email_resolves_to_the_earliest_user
+//
+// What is left here is still worth having. A port that resolved the
+// duplicate differently from the others, for example to the newest match,
+// fails this and fails equality at the lifecycle's login step.
+func TestAppsAgreeWhichUserADuplicateEmailResolvesTo(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
 		t.Run(app.Name, func(t *testing.T) {
@@ -105,7 +123,9 @@ func TestDuplicateEmailLoginResolvesToTheEarliestUser(t *testing.T) {
 			// Two duplicates, checked after each: one alone leaves "the
 			// last match wins" indistinguishable from bad luck in a map
 			// walk, and the count keeps rising because the lifecycle has
-			// already invited duplicates of this email by now.
+			// already invited duplicates of this email by now. Two also
+			// keeps the check meaningful on a re-run against an app that
+			// has already been exercised.
 			for i, name := range []string{"Ada Impostor One", "Ada Impostor Two"} {
 				dup := inviteMember(t, c, name, "ada@acme.test")
 				require.NotEqual(t, "u_ada", dup, "duplicate %d must be a new user", i)
@@ -113,7 +133,7 @@ func TestDuplicateEmailLoginResolvesToTheEarliestUser(t *testing.T) {
 				resp := validated(t, c, http.MethodPost, "/api/login", "", `{"email":"ada@acme.test"}`)
 				require.Equal(t, http.StatusOK, resp.Status)
 				require.Equal(t, "u_ada", jsonField(t, resp.Body, "id"),
-					"after duplicate %d (%s), the email must still resolve to the seeded user", i, dup)
+					"after duplicate %d (%s), every app must still resolve the email to u_ada", i, dup)
 			}
 		})
 	}

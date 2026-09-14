@@ -39,6 +39,17 @@ conformance check I can see unless the harness invites a duplicate of
 `ada@acme.test` and then logs in as her, so this is a genuinely open
 question rather than a divergence I can test my way out of.
 
+Settled in task 7, and only halfway by the harness. `contract/openapi.yaml`
+now states the rule, and the lifecycle invites a duplicate and logs in with
+it, so the equality layer catches a port that answers differently from the
+others. It does not catch a port that keeps no order at all: over HTTP a
+duplicate is always minted after the row it duplicates, so created_at order
+and a store's own iteration order always agree. Confirmed by deleting the
+sort from `apps/node`'s store, which left both the harness test and
+equality green. The ordering itself is pinned in each store's own suite,
+here by `duplicate_email_resolves_to_the_earliest_user`, which plants a
+duplicate older than the seeded user, something no route can do.
+
 ### 2. Does removing a member cascade to their requests and comments?
 
 `DELETE /api/members/{id}` declares 401, 403, 404 and 405 and no 409, and
@@ -296,7 +307,8 @@ that failure will reach for a state bug that is not there.
 Question 1 above is live in the login handler, which is the only caller of
 `find_user_by_email`. I did not invent a second policy: the handler passes
 the email through untrimmed and takes whichever user the store's total
-order returns. The resolution stays in one place.
+order returns. The resolution stays in one place, which is also why the
+store test added in task 7 is enough to cover it.
 
 ## Decisions that are not contract holes
 

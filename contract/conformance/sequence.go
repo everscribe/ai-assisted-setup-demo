@@ -50,11 +50,20 @@ func Lifecycle() []Step {
 		{"role not trimmed", "PUT", "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`},
 
 		// Emails are not unique, so login has to say which of two users
-		// sharing one it returns. Inviting a duplicate of a seeded email
-		// and logging in with it is the only way the equality layer can
-		// see that rule. Both steps come after "members after invite" so
-		// no list comparison above them changes, and replaying the script
-		// only adds another duplicate, which the rule already covers.
+		// sharing one it returns. These two steps put that answer in front
+		// of the equality layer, so a port resolving the duplicate
+		// differently from the others fails here.
+		//
+		// They do not check the ordering rule openapi.yaml states for that
+		// lookup. They cannot: a duplicate minted at runtime is always the
+		// later row, so created_at order and a store's own iteration order
+		// always agree here and a store that does no ordering passes. Each
+		// store's suite plants an older duplicate to pin the rule itself.
+		// See TestAppsAgreeWhichUserADuplicateEmailResolvesTo.
+		//
+		// Both steps come after "members after invite" so no list
+		// comparison above them changes, and replaying the script only
+		// adds another duplicate, which changes no answer.
 		{"invite a duplicate email", "POST", "/api/members", "u_ada", `{"name":"Ada Impostor","email":"ada@acme.test","role":"member"}`},
 		{"login with the duplicated email", "POST", "/api/login", "", `{"email":"ada@acme.test"}`},
 
