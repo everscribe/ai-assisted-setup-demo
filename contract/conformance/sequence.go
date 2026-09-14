@@ -49,6 +49,25 @@ func Lifecycle() []Step {
 		{"unparseable body", "POST", "/api/resources/r_nope/requests", "u_linus", `{`},
 		{"role not trimmed", "PUT", "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`},
 
+		// Two more rules the contract states and nothing here exercised.
+		// A rule the harness is blind to is the mistake the six steps
+		// above were added to correct, so neither arrived as contract
+		// text alone.
+		//
+		// A case variant of a field name is an unknown field, so this
+		// login must answer as {} does. Go bound it and returned 200
+		// with Ada's record while Node and Rust answered 400, on login
+		// and on the role change.
+		//
+		// A path with an empty segment is the API's own JSON 404. Go
+		// answered 301 with an HTML body, Rust 200 with Ada's record,
+		// Node 404.
+		//
+		// Both are rejected requests: neither reaches a store, so no
+		// list above them changes and a replay answers identically.
+		{"case-variant field name on login", "POST", "/api/login", "", `{"Email":"ada@acme.test"}`},
+		{"empty path segment", "GET", "/api//me", "u_ada", ""},
+
 		// Emails are not unique, so login has to say which of two users
 		// sharing one it returns. These two steps put that answer in front
 		// of the equality layer, so a port resolving the duplicate
