@@ -42,6 +42,24 @@ var tsPlaceholder = regexp.MustCompile(`^\$ts\d+$`)
 // order fixes removed.
 var comparedHeaders = []string{"Content-Type", "Allow"}
 
+// canonicalizeAllow sorts an Allow header's methods before comparison.
+// openapi.yaml:122-124 says the Allow header on a 405 lists the
+// registered methods in an unspecified order, so a raw string compare
+// would be a conformance check matching on something the contract
+// disowns. Sorting keeps the method set exact: a missing or invented
+// method still diverges.
+func canonicalizeAllow(v string) string {
+	if v == "" {
+		return ""
+	}
+	methods := strings.Split(v, ",")
+	for i, m := range methods {
+		methods[i] = strings.TrimSpace(m)
+	}
+	sort.Strings(methods)
+	return strings.Join(methods, ",")
+}
+
 // canonicalize collapses timestamp placeholders (see tsPlaceholder) and
 // sorts array elements into a stable order, so two apps' responses
 // compare equal regardless of a clock-resolution-driven ordering tie.
@@ -111,6 +129,19 @@ func TestCanonicalizeCollapsesInvalidBodyPrefix(t *testing.T) {
 		"a genuinely different error message must not collapse to the same value")
 }
 
+// TestCanonicalizeAllowIgnoresOrder pins the unspecified-order exemption
+// (openapi.yaml:122-124) without needing either app up. Two orderings of
+// the same set must canonicalize equal; a genuinely different set must
+// not, or the sort would be swallowing a missing or invented method
+// instead of just reordering.
+func TestCanonicalizeAllowIgnoresOrder(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, canonicalizeAllow("POST, GET"), canonicalizeAllow("GET, POST"))
+
+	require.NotEqual(t, canonicalizeAllow("GET, POST"), canonicalizeAllow("GET, POST, DELETE"),
+		"a missing or invented method must not canonicalize equal")
+}
+
 // The four apps are compared to each other, not to a designated
 // reference, so no app's runtime output is privileged and drift is
 // caught wherever it appears. Skipped with fewer than two apps up,
@@ -136,7 +167,11 @@ func TestAppsAgreeWithEachOther(t *testing.T) {
 			require.NoError(t, err, "%s: step %d (%s)", app.Name, i, steps[i].Name)
 			row := fmt.Sprintf("%d|", r.Status)
 			for _, h := range comparedHeaders {
-				row += fmt.Sprintf("%s=%s|", h, r.Header.Get(h))
+				v := r.Header.Get(h)
+				if h == "Allow" {
+					v = canonicalizeAllow(v)
+				}
+				row += fmt.Sprintf("%s=%s|", h, v)
 			}
 			if len(body) > 0 {
 				var parsed any
