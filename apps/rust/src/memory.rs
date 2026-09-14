@@ -339,7 +339,9 @@ mod tests {
     /// order always agree and no conformance check can tell the sort from
     /// a plain walk of the vec. Planting an older duplicate behind the
     /// seeded user is what makes the sort load-bearing: without it this
-    /// returns u_ada.
+    /// returns u_ada. One lookup per case is enough here, unlike apps/go:
+    /// the rows live in a Vec in push order and sort_by is stable, so
+    /// dropping the id tiebreak fails this every time.
     #[tokio::test]
     async fn duplicate_email_resolves_to_the_earliest_user() {
         let s = MemoryStore::new();

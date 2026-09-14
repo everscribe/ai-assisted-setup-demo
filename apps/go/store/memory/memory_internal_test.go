@@ -23,7 +23,7 @@ import (
 // than the seeded user and a second tied with it, straight into the map,
 // which is the only way either half of the comparator is exercised.
 // Observed: dropping the id tiebreak leaves the external test green and
-// turns this one red.
+// turns this one red on every one of 20 runs.
 func TestDuplicateEmailPrefersTheOlderRow(t *testing.T) {
 	t.Parallel()
 	s := New()
@@ -47,12 +47,25 @@ func TestDuplicateEmailPrefersTheOlderRow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "u_older", got.ID, "the older duplicate must win on created_at")
 
-	// Tied created_at, so only the id tiebreak can win it.
+	// Tied created_at, so only the id tiebreak can win it. Asserted over
+	// many lookups, not one: with the tiebreak gone the sort keeps the
+	// order the two rows came out of the map in, which is random per
+	// lookup, so a single check would let that bug through about half the
+	// time. Correct code answers the same row every time, so the loop is
+	// free.
 	tied := *older
 	tied.ID = "u_aaa"
 	tied.Name = "Ada Tie"
 	s.users[tied.ID] = &tied
-	got, err = s.FindUserByEmail(t.Context(), "ada@acme.test")
-	require.NoError(t, err)
-	require.Equal(t, "u_aaa", got.ID, "a tie on created_at must break on id ascending")
+	for i := 0; i < tieLookups; i++ {
+		got, err = s.FindUserByEmail(t.Context(), "ada@acme.test")
+		require.NoError(t, err)
+		require.Equal(t, "u_aaa", got.ID,
+			"lookup %d: a tie on created_at must break on id ascending", i)
+	}
 }
+
+// tieLookups is how many times the tied pair is looked up. Each lookup is
+// close to a coin flip once the tiebreak is dropped, so 200 puts a false
+// negative somewhere past one in 10^60.
+const tieLookups = 200

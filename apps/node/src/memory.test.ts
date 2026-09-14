@@ -30,7 +30,10 @@ describe("MemoryStore", () => {
   // after the user it duplicates, so insertion order and created_at order
   // always agree and no conformance check can tell the sort from a plain
   // map walk. Planting an older duplicate behind the seeded user is what
-  // makes the sort load-bearing: without it this returns u_ada.
+  // makes the sort load-bearing: without it this returns u_ada. One
+  // lookup per case is enough here, unlike apps/go: a Map iterates in
+  // insertion order and Array.prototype.sort is stable, so dropping the
+  // id tiebreak fails this every time rather than most of the time.
   it("resolves a duplicate email to the earliest user, not the first stored", async () => {
     const s = new MemoryStore();
     await s.seed();
