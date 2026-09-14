@@ -15,6 +15,9 @@ use crate::models::{AccessRequest, Comment, Organization, Resource, User};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreError {
     NotFound,
+    // Never constructed here: a cross-tenant target is NotFound instead.
+    // The handlers still map it, so the arm is live and the variant is not.
+    #[allow(dead_code)]
     Forbidden,
     Conflict,
 }
@@ -31,6 +34,10 @@ impl std::fmt::Display for StoreError {
 
 impl std::error::Error for StoreError {}
 
+// The interface mirrors the Go app's, so it carries readers no route
+// reaches: the contract says nothing returns organizations, and the
+// handlers list rows rather than fetching one. The tests use all of them.
+#[allow(dead_code)]
 #[async_trait::async_trait]
 pub trait Store: Send + Sync {
     async fn seed(&self) -> Result<(), StoreError>;

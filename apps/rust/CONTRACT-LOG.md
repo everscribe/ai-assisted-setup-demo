@@ -12,6 +12,11 @@ convention.
 
 The complete list of files I read is in the task report.
 
+Task 5, the handlers and the router, kept the same restriction and added
+questions 11 to 18 and the notes below them. Its own read list is in
+`task-5-report.md`; it opened none of those four paths either, and read
+nothing under `apps/go/` or `apps/node/` at all.
+
 ## Questions the contract could not answer
 
 ### 1. Which user does a duplicate email resolve to?
@@ -150,6 +155,119 @@ instant is still correct and the contract says comparison is by parsed
 instant with the digit count unspecified, so this conforms; I am noting it
 because it is the one input that makes the output look second-precise.
 
+### 11. Does routing run before authentication?
+
+The check-order paragraph starts at 401, which reads as if authentication
+is the first thing that happens. It is not: the 405 example in the same
+document is "GET on a POST-only route such as /api/login", with no actor
+mentioned, and the brief's own router test sends GET /api/login with no
+X-User-ID and expects a 405.
+
+What I did: method dispatch happens in the router, before any handler
+runs, so a method mismatch is a 405 whether or not the caller is
+authenticated. The contract's ordered list starts once a handler has the
+request. Confidence: high, but the paragraph would be clearer if it said
+so, since a port that answered 401 there would be reading the same words.
+
+### 12. Does a 405 Allow header list HEAD?
+
+The contract says HEAD and OPTIONS are registered on no route, and that
+Allow lists "the methods that are registered for the path". Put together
+that excludes both, but nothing states it outright, and the framework
+default disagrees loudly.
+
+Axum attaches an Allow header of its own to any method-mismatch response
+whose handler did not set one, built from the methods in that path's
+MethodRouter. Since a HEAD handler has to be registered to stop axum
+routing HEAD to the GET handler (see below), axum's own header reads
+"POST,HEAD" on /api/login. The handler sets Allow explicitly, which axum
+then leaves alone, so the wire carries exactly one Allow listing only the
+contract's methods.
+
+This also means the brief's `method_mismatch_is_405_with_allow` cannot
+fail: it asserts the header is present, and axum supplies one for free
+with the wrong value. `allow_lists_the_contract_methods_and_nothing_else`
+is the test that can fail, and it reads through `get_all` so a handler
+that appended rather than replaced is caught too.
+
+### 13. Does a bodiless HEAD 405 carry a Content-Type?
+
+The contract says every response that has a body is
+`application/json; charset=utf-8`, and that the two 204s, which have no
+body, send no Content-Type at all. A HEAD 405 also has no body, and the
+contract does not say which of those two rules it follows.
+
+What I did: followed the 204 rule. A HEAD 405 sends the status and Allow
+and nothing else, no Content-Type and no body. Confidence: high, since the
+contract ties Content-Type to having a body and explicitly binds only the
+status and Allow on a HEAD.
+
+### 14. Which 400 message does a wrong-typed field get?
+
+The contract pins a stable message for a required field that is missing,
+null or trims to empty: "name required", "name and email required",
+"reason required", "body required", "email required",
+"role must be admin or member". It also says any other wrong type is a
+400 and that the message there is not normative, because Go's is its JSON
+decoder's own text.
+
+What I did: value errors get the route's stable message, type errors get a
+generic "invalid body". So `{"role": 7}` on PUT /api/members/{id}/role is
+400 "invalid body" while `{"role": null}` is 400
+"role must be admin or member", which is the split a struct-binding
+decoder produces: null leaves the zero value and reaches the app's own
+check, a number fails the decode. The text is "invalid body" with no
+colon, so it cannot collide with the Go message the contract bars a check
+from matching. Confidence: high on the status, which is all that binds.
+
+### 15. Is X-User-ID trimmed?
+
+The trimming rules are stated per route and per body field, and the two
+exceptions are body fields too. The header is not mentioned anywhere.
+
+What I did: matched exactly, like the login email. " u_ada " is a 401.
+Confidence: high, since trimming is described as something that happens to
+a request body before validation and storage.
+
+### 16. What answers a path outside /api?
+
+The contract pins that the mount must not redirect and must not reach the
+API for `/api` or `/API/me`, but not what those requests get instead. The
+frontend mount is the only thing there, and this app's is a ServeDir that
+the next task fills in.
+
+What I did: `/api`, `/api/` and anything under `/api` reach the API's own
+JSON 404. Outside `/api`, a request for a file that exists is served, and
+anything else is the same `{"error": "not found"}` with the same
+Content-Type. So `GET /API/me` is byte-identical to
+`GET /api/no-such-route` rather than an empty static 404, which is the
+strongest reading of the rule that the leak the contract closes stays
+closed at the mount too. Confidence: medium. A port that let its static
+server answer its own empty 404 there is not contradicted by anything
+written down, and the two would differ on the wire.
+
+### 17. May a conformance run mutate the seeded fixture?
+
+Not a hole in the app's behaviour but a hole in what the contract says
+about running the suite. `Lifecycle()` approves and then revokes
+`req_acme_1`, and asserts it "must start pending". Nothing resets the
+store between runs, so a second run against the same process fails on that
+assertion. I hit this: my first harness run passed, the second failed with
+`expected: "pending", actual: "revoked"`.
+
+What I did: no reset, and no reseed route. `seed()` runs once at startup,
+because the contract declares eighteen routes and none of them is a reset.
+Every harness run needs a freshly started app. Confidence: high on the
+behaviour, and this is worth writing down because a port author who sees
+that failure will reach for a state bug that is not there.
+
+### 18. Does the duplicate-email question reach the handler?
+
+Question 1 above is live in the login handler, which is the only caller of
+`find_user_by_email`. I did not invent a second policy: the handler passes
+the email through untrimmed and takes whichever user the store's total
+order returns. The resolution stays in one place.
+
 ## Decisions that are not contract holes
 
 ### The crate cannot be called `everscribe-demo-rust`
@@ -253,6 +371,51 @@ types, and `sensitivity` is documented as free-form rather than an enum.
 `StoreError::Forbidden` is exported for the handlers. No store method takes
 an actor or a role, and the contract requires the admin check to run ahead
 of body parsing, which is a handler ordering concern the store cannot see.
+
+### The brief's `cargo add` line does not parse
+
+`cargo add --dev tower@0.5 --features tower/util` fails on cargo 1.96.1
+with "feature `util` activated for crate `tower` but the crate wasn't
+specified". The `crate/feature` form names a different dependency's
+feature, and there is no `tower` dependency for it to qualify. Used
+`cargo add --dev tower@0.5 --features util`, which produces the intended
+`tower = { version = "0.5", features = ["util"] }`.
+
+### HEAD needs a handler, not just an absent one
+
+Axum 0.7 dispatches HEAD to the `head` slot and then, if that is empty,
+to the `get` slot: `call!(HEAD, head); call!(HEAD, get);` in
+`method_routing.rs`. So `on(MethodFilter::GET, handler)` still answers a
+HEAD with a 200 from the GET handler, which the contract forbids. Every
+route registers HEAD explicitly against the 405 handler so the `head` slot
+wins. Verified by mutation: deleting that registration turns
+`head_on_a_get_route_is_405_and_carries_no_body` red and nothing else.
+
+### The crate-wide `#![allow(dead_code)]` is gone
+
+Task 4's blanket allow is deleted. It was hiding three warnings, all in
+the store layer and all structural rather than accidental:
+`StoreError::Forbidden` is never constructed, four trait methods
+(`get_resource`, `get_request`, `list_organizations`, `get_organization`)
+are never called by a handler, and `Data::organizations` is therefore
+never read.
+
+None of them is removable. The handlers must map `Forbidden`, the tenant
+scoping test drives `get_resource` and `get_request` through all twelve
+org-scoped methods, and the contract itself says no route returns
+organizations while the seed declares them anyway. So they carry two
+narrow allows with the reason written next to them, one on the variant and
+one on the trait, rather than one blanket allow at the crate root.
+`cargo build --release` is warning-free.
+
+### Where the SPA lives
+
+The brief says to serve `apps/rust/web/dist`, which is a repo-relative
+path, and ServeDir resolves against the working directory. The binary is
+normally started from the crate root, so `web/dist` is the default;
+`apps/rust/web/dist` is used when that is the directory that exists, and
+`STATIC_DIR` overrides both for a container that lays the files out
+somewhere else. Nothing is created: the directory is the next task's.
 
 ## Contract versus brief
 
