@@ -25,6 +25,26 @@ jobs:
       - run: cd apps/go && go build ./... && go vet ./...
       - run: cd apps/go && go test ./... -count=1
 
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Same channel apps/rust/Dockerfile builds with. rustup ships on the
+      # runner, so no third-party action is pinned here.
+      - name: pin the toolchain the Dockerfile builds with
+        run: rustup toolchain install 1.96 --profile minimal && rustup default 1.96
+      - run: cd apps/rust && cargo build && cargo test
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # apps/rust is the only app with a frontend test script. The other
+      # two have no web suite to run here.
+      - name: apps/rust frontend DOM tests
+        run: cd apps/rust/web && pnpm install --frozen-lockfile && pnpm test
+
   conformance:
     runs-on: ubuntu-latest
     steps:
