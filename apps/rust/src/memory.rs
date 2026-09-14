@@ -374,6 +374,27 @@ mod tests {
         assert!(matches!(err, StoreError::NotFound));
     }
 
+    /// Revoking undoes the grant, not the record of who granted it. Until
+    /// task 7 this was written down only by req_globex_2's shape in the
+    /// seed fixture, which is seeded revoked rather than revoked at
+    /// runtime.
+    #[tokio::test]
+    async fn revoke_keeps_the_decision_fields() {
+        let s = MemoryStore::new();
+        s.seed().await.unwrap();
+
+        let approved = s.approve_request("org_acme", "req_acme_1", "u_ada").await.unwrap();
+        assert_eq!(approved.decided_by.as_deref(), Some("u_ada"));
+        let decided_at = approved.decided_at.expect("approval stamps decided_at");
+
+        let revoked = s.revoke_request("org_acme", "req_acme_1", "u_ada").await.unwrap();
+        assert_eq!(revoked.status, "revoked");
+        assert_eq!(revoked.decided_by.as_deref(), Some("u_ada"), "revoke must keep decided_by");
+        assert_eq!(revoked.decided_at, Some(decided_at), "revoke must keep decided_at unchanged");
+        assert_eq!(revoked.revoked_by.as_deref(), Some("u_ada"));
+        assert!(revoked.revoked_at.is_some());
+    }
+
     #[tokio::test]
     async fn cross_tenant_resource_is_not_found() {
         let s = MemoryStore::new();

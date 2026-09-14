@@ -57,6 +57,25 @@ describe("MemoryStore", () => {
     await expect(s.findUserByEmail("nobody@acme.test")).rejects.toBe(ErrNotFound);
   });
 
+  // Revoking undoes the grant, not the record of who granted it. Until
+  // task 7 this was written down only by req_globex_2's shape in the seed
+  // fixture, which is seeded revoked rather than revoked at runtime.
+  it("keeps decided_by and decided_at when a request is revoked", async () => {
+    const s = new MemoryStore();
+    await s.seed();
+
+    const approved = await s.approveRequest("org_acme", "req_acme_1", "u_ada");
+    expect(approved.decided_by).toBe("u_ada");
+    expect(approved.decided_at).toBeTruthy();
+
+    const revoked = await s.revokeRequest("org_acme", "req_acme_1", "u_ada");
+    expect(revoked.status).toBe("revoked");
+    expect(revoked.decided_by).toBe("u_ada");
+    expect(revoked.decided_at).toBe(approved.decided_at);
+    expect(revoked.revoked_by).toBe("u_ada");
+    expect(revoked.revoked_at).toBeTruthy();
+  });
+
   it("decommissions idempotently, re-stamping decommission_at", async () => {
     const s = new MemoryStore();
     await s.seed();

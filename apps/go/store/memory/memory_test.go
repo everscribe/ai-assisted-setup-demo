@@ -86,9 +86,14 @@ func TestCommentOrderBreaksTiesOnID(t *testing.T) {
 	}
 }
 
-// TestDuplicateEmailResolvesToTheEarliestUser pins the rule openapi.yaml
-// now states for POST /api/login: an email matching more than one user
-// resolves to the earliest by created_at, then by id ascending.
+// TestDuplicateEmailResolvesToTheEarliestUser pins that the login lookup
+// answers the same way every time once an email matches more than one
+// user. It is a determinism test, not an ordering test. Every duplicate
+// it can mint through InviteMember is later than the seeded user and
+// carries its own created_at, so the id tiebreak is never reached:
+// dropping that tiebreak leaves this test green across 20 runs.
+// TestDuplicateEmailPrefersTheOlderRow in memory_internal_test.go plants
+// an older row and a tied one, and is what pins the order itself.
 //
 // This lookup used to range the users map and return the first hit, and
 // Go randomizes map iteration, so the answer changed run to run once a
