@@ -114,3 +114,9 @@ wrong-typed `role` on `PUT /api/members/{id}/role` answers
 `role must be admin or member`, because that route's message already covers
 every value that is not exactly one of the two strings and splitting it by
 JSON type would be a distinction the contract never draws.
+
+This is the one place this port went its own way. The task 3 review reports
+that `{"role": 5}` answers `role must be admin or member` here and
+`invalid body` on node and rust. All four are a 400, the contract says the
+text is not normative, and the four-way conformance run passes, so it is not a
+conformance failure. It is a divergence, and the log's job is to record it.

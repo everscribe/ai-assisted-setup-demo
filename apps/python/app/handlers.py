@@ -36,6 +36,8 @@ def fail_store(err: StoreError) -> JSON:
     if isinstance(err, NotFoundError):
         return fail(404, "not found")
     if isinstance(err, ForbiddenError):
+        # Unreachable today: the store answers a cross-tenant target with
+        # NotFoundError. The branch keeps the mapping total.
         return fail(403, "forbidden")
     if isinstance(err, ConflictError):
         return fail(409, "conflict")

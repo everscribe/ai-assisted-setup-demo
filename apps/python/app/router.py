@@ -84,7 +84,12 @@ def _raw_path(scope: Scope) -> str:
 
 
 class RawPathMiddleware:
-    """Routes on the raw path and rejects empty segments before routing."""
+    """Routes on the raw path, so a percent-encoded octet is not decoded first.
+
+    An empty segment needs no guard here: no registered path carries one and a
+    path parameter never matches across a slash, so /api//me falls through to
+    the JSON 404 on its own. tests/test_router.py pins that.
+    """
 
     def __init__(self, app) -> None:
         self.app = app
@@ -93,12 +98,8 @@ class RawPathMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        path = _raw_path(scope)
         scope = dict(scope)
-        scope["path"] = path
-        if _under_api(path) and "//" in path:
-            await fail(404, "not found")(scope, receive, send)
-            return
+        scope["path"] = _raw_path(scope)
         await self.app(scope, receive, send)
 
 

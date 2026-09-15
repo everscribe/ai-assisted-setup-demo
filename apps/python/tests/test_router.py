@@ -11,6 +11,25 @@ from app.router import build_app
 # The contract's content type for every response that has a body.
 JSON_CT = "application/json; charset=utf-8"
 
+ADMIN = {"X-User-ID": "u_ada"}
+MEMBER = {"X-User-ID": "u_linus"}
+
+# Every admin-gated route: name, method, path, body, and the status an admin
+# gets. A member must be refused on all of them.
+ADMIN_ROUTES = [
+    ("invite_member", "POST", "/api/members",
+     b'{"name":"New P","email":"np@acme.test"}', 201),
+    ("remove_member", "DELETE", "/api/members/u_linus", None, 204),
+    ("change_member_role", "PUT", "/api/members/u_linus/role",
+     b'{"role":"admin"}', 200),
+    ("register_resource", "POST", "/api/resources", b'{"name":"vault"}', 201),
+    ("decommission_resource", "POST", "/api/resources/r_acme_pg/decommission",
+     None, 200),
+    ("approve_request", "POST", "/api/requests/req_acme_1/approve", None, 200),
+    ("deny_request", "POST", "/api/requests/req_acme_1/deny", None, 200),
+    ("revoke_request", "POST", "/api/requests/req_acme_2/revoke", None, 200),
+]
+
 
 @pytest.fixture
 def anyio_backend():
@@ -64,8 +83,13 @@ async def test_admin_check_precedes_body_parsing(client):
 
 
 @pytest.mark.anyio
-async def test_empty_path_segment_is_json_404(client):
-    r = await client.get("/api//me", headers={"X-User-ID": "u_ada"})
+@pytest.mark.parametrize("path", ["/api//me", "/api/resources//", "/api//", "/api//me/"])
+async def test_empty_path_segment_is_json_404(path, client):
+    # No code of ours rejects these: no registered path carries an empty
+    # segment and {id} never matches across a slash, so they fall through to
+    # the JSON 404. This pins that the router keeps behaving that way, since a
+    # framework that normalised the path would serve /api/me instead.
+    r = await client.get(path, headers=ADMIN)
     assert r.status_code == 404
     assert r.json() == {"error": "not found"}
 
@@ -168,7 +192,7 @@ async def test_logout_204_carries_no_content_type(client):
 
 @pytest.mark.anyio
 async def test_trimming_and_defaults_on_register_resource(client):
-    r = await client.post("/api/resources", headers={"X-User-ID": "u_ada"},
+    r = await client.post("/api/resources", headers=ADMIN,
                           content=b'{"name":"  billing-db  ","sensitivity":null}')
     assert r.status_code == 201
     body = r.json()
@@ -176,7 +200,14 @@ async def test_trimming_and_defaults_on_register_resource(client):
     assert body["sensitivity"] == "internal"
     assert body["description"] == ""
 
-    blank = await client.post("/api/resources", headers={"X-User-ID": "u_ada"},
+    padded = await client.post("/api/resources", headers=ADMIN,
+                               content=b'{"name":"cache","description":"  hot keys  ",'
+                                       b'"sensitivity":"  public  "}')
+    assert padded.status_code == 201
+    assert padded.json()["description"] == "hot keys"
+    assert padded.json()["sensitivity"] == "public"
+
+    blank = await client.post("/api/resources", headers=ADMIN,
                               content=b'{"name":"   "}')
     assert blank.status_code == 400
     assert blank.json() == {"error": "name required"}
@@ -190,3 +221,112 @@ async def test_role_is_compared_exactly(client):
     assert r.json() == {"error": "role must be admin or member"}
     still = await client.get("/api/members", headers={"X-User-ID": "u_ada"})
     assert [m["role"] for m in still.json() if m["id"] == "u_linus"] == ["member"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name,method,path,body,ok_status", ADMIN_ROUTES,
+                         ids=[row[0] for row in ADMIN_ROUTES])
+async def test_admin_role_is_required_on_every_admin_gated_route(
+    client, name, method, path, body, ok_status
+):
+    refused = await client.request(method, path, headers=MEMBER, content=body)
+    assert refused.status_code == 403, name
+    assert refused.json() == {"error": "admin role required"}, name
+    # Positive control: the same call as an admin must succeed, or a handler
+    # that refuses everything would pass this for free.
+    allowed = await client.request(method, path, headers=ADMIN, content=body)
+    assert allowed.status_code == ok_status, name
+
+
+@pytest.mark.anyio
+async def test_an_unknown_actor_is_401(client):
+    # Positive control: a known actor is a 200 on the same route.
+    ok = await client.get("/api/me", headers=ADMIN)
+    assert ok.status_code == 200
+    r = await client.get("/api/me", headers={"X-User-ID": "u_nobody"})
+    assert r.status_code == 401
+    assert r.json() == {"error": "unauthorized"}
+
+
+@pytest.mark.anyio
+async def test_each_decision_verb_drives_its_own_transition(client):
+    approved = await client.post("/api/requests/req_acme_1/approve", headers=ADMIN)
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+
+    revoked = await client.post("/api/requests/req_acme_1/revoke", headers=ADMIN)
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    # Revoking leaves the approval's decided_by alone.
+    assert revoked.json()["decided_by"] == "u_ada"
+
+    fresh = await client.post("/api/resources/r_acme_pg/requests", headers=MEMBER,
+                              content=b'{"reason":"Verify the replica lag alert."}')
+    assert fresh.status_code == 201
+    request_id = fresh.json()["id"]
+    denied = await client.post(f"/api/requests/{request_id}/deny", headers=ADMIN)
+    assert denied.status_code == 200
+    assert denied.json()["status"] == "denied"
+
+
+@pytest.mark.anyio
+async def test_a_transition_that_does_not_apply_is_409_conflict(client):
+    # Positive control: the first deny is a 200, so the 409 below is the state
+    # machine and not a handler that refuses everything.
+    first = await client.post("/api/requests/req_acme_1/deny", headers=ADMIN)
+    assert first.status_code == 200
+    again = await client.post("/api/requests/req_acme_1/deny", headers=ADMIN)
+    assert again.status_code == 409
+    assert again.json() == {"error": "conflict"}
+
+
+@pytest.mark.anyio
+async def test_member_name_and_email_are_trimmed(client):
+    r = await client.post("/api/members", headers=ADMIN,
+                          content=b'{"name":"  Grace H  ","email":"  gh@acme.test  "}')
+    assert r.status_code == 201
+    assert r.json()["name"] == "Grace H"
+    assert r.json()["email"] == "gh@acme.test"
+
+    blank = await client.post("/api/members", headers=ADMIN,
+                              content=b'{"name":"   ","email":"   "}')
+    assert blank.status_code == 400
+    assert blank.json() == {"error": "name and email required"}
+
+
+@pytest.mark.anyio
+async def test_access_request_reason_is_trimmed(client):
+    r = await client.post("/api/resources/r_acme_pg/requests", headers=MEMBER,
+                          content=b'{"reason":"  Debug PAY-4821.  "}')
+    assert r.status_code == 201
+    assert r.json()["reason"] == "Debug PAY-4821."
+
+    blank = await client.post("/api/resources/r_acme_pg/requests", headers=MEMBER,
+                              content=b'{"reason":"   "}')
+    assert blank.status_code == 400
+    assert blank.json() == {"error": "reason required"}
+
+
+@pytest.mark.anyio
+async def test_comment_body_is_trimmed(client):
+    r = await client.post("/api/requests/req_acme_1/comments", headers=MEMBER,
+                          content=b'{"body":"  Scope is read-only.  "}')
+    assert r.status_code == 201
+    assert r.json()["body"] == "Scope is read-only."
+
+    blank = await client.post("/api/requests/req_acme_1/comments", headers=MEMBER,
+                              content=b'{"body":"   "}')
+    assert blank.status_code == 400
+    assert blank.json() == {"error": "body required"}
+
+
+@pytest.mark.anyio
+async def test_login_email_is_pointedly_not_trimmed(client):
+    # Positive control: the exact address logs in.
+    ok = await client.post("/api/login", content=b'{"email":"ada@acme.test"}')
+    assert ok.status_code == 200
+    assert ok.json()["id"] == "u_ada"
+
+    padded = await client.post("/api/login", content=b'{"email":" ada@acme.test "}')
+    assert padded.status_code == 401
+    assert padded.json() == {"error": "no user with that email"}
