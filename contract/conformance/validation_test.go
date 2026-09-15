@@ -189,6 +189,17 @@ func TestPercentEncodedPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 			plainID := validated(t, c, http.MethodGet, "/api/resources/r_acme_pg/requests", "u_ada", "")
 			require.Equal(t, http.StatusOK, encodedID.Status, "a percent-encoded octet in an id is decoded")
 			require.Equal(t, string(plainID.Body), string(encodedID.Body))
+
+			// The mount is raw too. Only the status is asserted, for the
+			// reason the mixed-case test gives: /%61pi/me falls outside
+			// the API entirely, onto whatever serves the SPA, whose 404
+			// body is not the contract's to specify. Starlette routes on
+			// the ASGI-decoded scope["path"], so a port can serve Ada's
+			// record here without noticing.
+			outside, err := c.Do(t.Context(), http.MethodGet, "/%61pi/me", "u_ada", "")
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotFound, outside.Status,
+				"/%61pi/me must not reach the API")
 		})
 	}
 }

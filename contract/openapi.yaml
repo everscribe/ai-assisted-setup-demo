@@ -183,19 +183,21 @@ info:
     not, and needs caseSensitive: true on the router and
     "case sensitive routing" on the app that mounts it.
 
-    A percent-encoded octet in a path under /api is not decoded before
-    routing. GET /api/%6de is {"error": "not found"} with a 404, never
-    Ada's record, and so is GET /api/%72esources. This is the same rule
+    A percent-encoded octet in a path is not decoded before routing.
+    GET /api/%6de is {"error": "not found"} with a 404, never Ada's
+    record, and so is GET /api/%72esources. This is the same rule
     as the trailing slash, the empty segment and path case sensitivity:
     a path either matches a registered route byte for byte or it does
     not. Frameworks disagree by default, so a port must check rather
     than assume. Express and axum match the raw path; Gin reads
     URL.Path, already decoded, unless UseRawPath is set, and served
-    Ada's record here until it was. Unlike the trailing slash and case
-    sensitivity, this rule stops at the mount: the ports do not agree on
-    GET /%61pi/me, which reaches the SPA's HTML 404 on Node and the
-    API's JSON 404 on Go and Rust, and the contract declines to specify
-    a path that never spells /api.
+    Ada's record here until it was. The rule applies at the mount too,
+    as case sensitivity does: GET /%61pi/me is a 404 like any
+    unregistered path, never Ada's record. Only the status is pinned
+    there, because that path falls outside the API entirely, onto
+    whatever serves the SPA, whose 404 body is not the contract's to
+    specify. Starlette routes on the ASGI-decoded scope["path"], so a
+    port built on it must check this rather than inherit it.
 
     Raw routing is not raw path parameters. An octet inside a captured
     id is decoded before the store sees it, so GET

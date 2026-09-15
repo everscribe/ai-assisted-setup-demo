@@ -395,21 +395,28 @@ Six lines of table plus a header whitelist is cheaper than the thirty-row
 behaviour table that was rejected, and closes more than the header change
 alone would. That is Plan 4's Task 0.
 
-That divergence is decided, not waived. `/api/%6de` returned a user record
-on Go and a 404 on Node; Rust landed on Node's side, and on a path parameter
-(`/api/%72esources`) the split was the same two to one, so the raw reading
-was already the majority and pinning it cost one app rather than three. The
-rule now reads: a percent-encoded octet in a path under `/api` is not
+That divergence is decided, not waived, and it turned out to be two
+questions rather than one. Routing measured two to one: `/api/%6de`
+returned a user record on Go and a 404 on Node, Rust landed on Node's side,
+and a second literal route (`/api/%72esources`) split the same way, so the
+raw reading was already the majority and pinning it cost one app rather
+than three. Path parameters measured three to zero the other way: every
+port decoded an octet inside a captured id, so
+`/api/resources/r%5Facme_pg/requests` was a 200 naming `r_acme_pg`
+everywhere.
+
+The rule now reads: a percent-encoded octet in a path under `/api` is not
 decoded before routing, which is the same byte-for-byte rule the trailing
-slash, the empty segment and path case sensitivity already state, and the
-scoping to `/api` is the empty segment's, for the same reason. `apps/go`
-sets Gin's `UseRawPath`; Node and Rust needed no change. `UnescapePathValues`
-stays on with it, because all three already decode an octet inside a
-captured id and turning that off wholesale would have traded one divergence
-for another, so the contract pins that half too. Both halves live in
-`contract/openapi.yaml`'s prose block beside the three rules they match, and
-`Lifecycle()` replays both, so the fourth app is measured against the rule
-rather than landing on a side at random.
+slash, the empty segment and path case sensitivity already state. At the
+mount it is pinned the way case sensitivity is, status only, because
+`/%61pi/me` falls onto whatever serves the SPA and that body is not the
+contract's to specify. `apps/go` sets Gin's `UseRawPath`; Node and Rust
+needed no change. `UnescapePathValues` stays on with it, because turning
+decoding off wholesale would have traded the routing divergence for a
+parameter one, so the contract pins that half too. Both halves live in
+`contract/openapi.yaml`'s prose block beside the three rules they match,
+and `Lifecycle()` replays both, so the fourth app is measured against the
+rule rather than landing on a side at random.
 
 ### The harness survives instrumentation
 
