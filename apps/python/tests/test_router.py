@@ -30,6 +30,17 @@ ADMIN_ROUTES = [
     ("revoke_request", "POST", "/api/requests/req_acme_2/revoke", None, 200),
 ]
 
+# Every route that reads a body: name, method, path, and whether an admin gate
+# runs ahead of the parse. login is absent on purpose: it is anonymous, so it
+# has no earlier check to run ahead of the parse.
+BODY_ROUTES = [
+    ("invite_member", "POST", "/api/members", True),
+    ("change_member_role", "PUT", "/api/members/u_linus/role", True),
+    ("register_resource", "POST", "/api/resources", True),
+    ("request_access", "POST", "/api/resources/r_acme_pg/requests", False),
+    ("add_comment", "POST", "/api/requests/req_acme_1/comments", False),
+]
+
 
 @pytest.fixture
 def anyio_backend():
@@ -70,16 +81,31 @@ async def test_trailing_slash_is_404_not_a_redirect(client):
 
 
 @pytest.mark.anyio
-async def test_admin_check_precedes_body_parsing(client):
-    # A member sending garbage to an admin route gets 403, not 400.
-    # Positive control: the same route with a valid body and an admin actor
-    # must succeed, or a handler that refuses everything would pass this.
-    ok = await client.post("/api/members", headers={"X-User-ID": "u_ada"},
-                           content=b'{"name":"Grace H","email":"gh@acme.test"}')
-    assert ok.status_code == 201
-    r = await client.post("/api/members", headers={"X-User-ID": "u_linus"}, content=b"{")
-    assert r.status_code == 403
-    assert r.json() == {"error": "admin role required"}
+@pytest.mark.parametrize("name,method,path,admin_only", BODY_ROUTES,
+                         ids=[row[0] for row in BODY_ROUTES])
+async def test_every_body_route_checks_auth_and_role_before_parsing(
+    client, name, method, path, admin_only
+):
+    # 401 first, then 403, then the parse. The malformed body is what makes
+    # each row discriminate: a valid body is a 403 whichever order the handler
+    # runs, so only an unparseable one catches a role check that has slipped
+    # behind the parse. That is the reorder FastAPI performs for free if a
+    # Pydantic model is bound as a route parameter, which is why no route here
+    # binds one.
+    malformed = b"{"
+
+    anon = await client.request(method, path, content=malformed)
+    assert anon.status_code == 401, name
+
+    refused = await client.request(method, path, headers=MEMBER, content=malformed)
+    assert refused.status_code == (403 if admin_only else 400), name
+    if admin_only:
+        assert refused.json() == {"error": "admin role required"}, name
+
+    # Positive control: the same body from an admin reaches the parse, so the
+    # row above is about order and not a route that refuses everyone.
+    allowed = await client.request(method, path, headers=ADMIN, content=malformed)
+    assert allowed.status_code == 400, name
 
 
 @pytest.mark.anyio

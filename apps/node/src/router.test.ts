@@ -161,6 +161,46 @@ describe("router", () => {
     expect(r.status).toBe(404);
   });
 
+  // Check precedence on every route that reads a body: 401 first, then
+  // 403, then the parse. Nothing else in this file asserted a 403 at all.
+  // The malformed body is what makes each row discriminate: a valid body
+  // answers 403 whichever order the handler runs its checks in, so only
+  // an unparseable one shows a role check that has slipped behind the
+  // parse. express.text in router.ts is what keeps that order available;
+  // express.json would have answered 400 before any handler ran.
+  it("checks auth and the role before parsing the body, on every body route", async () => {
+    const send = (method: "post" | "put", path: string, actor?: string) => {
+      const req = request(app)[method](path).set("Content-Type", "application/json");
+      if (actor) req.set("X-User-ID", actor);
+      return req.send("{");
+    };
+
+    const routes = [
+      { name: "POST /api/members", method: "post", path: "/api/members", adminOnly: true },
+      { name: "PUT /api/members/:id/role", method: "put", path: "/api/members/u_linus/role", adminOnly: true },
+      { name: "POST /api/resources", method: "post", path: "/api/resources", adminOnly: true },
+      { name: "POST /api/resources/:id/requests", method: "post", path: "/api/resources/r_acme_pg/requests", adminOnly: false },
+      { name: "POST /api/requests/:id/comments", method: "post", path: "/api/requests/req_acme_1/comments", adminOnly: false },
+    ] as const;
+
+    for (const r of routes) {
+      const anon = await send(r.method, r.path);
+      expect(anon.status, `${r.name}: no actor`).toBe(401);
+
+      const member = await send(r.method, r.path, "u_linus");
+      expect(member.status, `${r.name}: member`).toBe(r.adminOnly ? 403 : 400);
+      if (r.adminOnly) {
+        expect(member.body, r.name).toEqual({ error: "admin role required" });
+      }
+
+      // Positive control: the same body from an admin reaches the parse,
+      // so the row above is about order and not a route that refuses
+      // everyone.
+      const admin = await send(r.method, r.path, "u_ada");
+      expect(admin.status, `${r.name}: admin`).toBe(400);
+    }
+  });
+
   it("still reaches the API's own JSON 404 on a bare /api", async () => {
     const r = await request(app).get("/api").set("X-User-ID", "u_ada");
     expect(r.status).toBe(404);

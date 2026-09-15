@@ -175,6 +175,50 @@ func TestCheckPrecedence(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// Check precedence on every route that reads a body, not just the
+// contract's worked example above. The malformed body is what makes each
+// row discriminate: a valid body answers 403 whichever order the handler
+// runs its checks in, so only an unparseable one shows a role check that
+// has slipped behind the parse.
+func TestEveryBodyRouteChecksAuthAndRoleBeforeParsing(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	const malformed = `{`
+
+	for _, tc := range []struct {
+		name, method, path string
+		adminOnly          bool
+	}{
+		{"invite member", http.MethodPost, "/api/members", true},
+		{"change role", http.MethodPut, "/api/members/u_linus/role", true},
+		{"register resource", http.MethodPost, "/api/resources", true},
+		{"request access", http.MethodPost, "/api/resources/r_acme_pg/requests", false},
+		{"add comment", http.MethodPost, "/api/requests/req_acme_1/comments", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := do(t, r, tc.method, tc.path, "", malformed)
+			require.Equal(t, http.StatusUnauthorized, w.Code, "no actor")
+
+			want := http.StatusBadRequest
+			if tc.adminOnly {
+				want = http.StatusForbidden
+			}
+			w = do(t, r, tc.method, tc.path, "u_linus", malformed)
+			require.Equal(t, want, w.Code, "member")
+			if tc.adminOnly {
+				require.JSONEq(t, `{"error":"admin role required"}`, w.Body.String())
+			}
+
+			// Positive control: the same body from an admin reaches the
+			// parse, so the row above is about order and not a route that
+			// refuses everyone.
+			w = do(t, r, tc.method, tc.path, "u_ada", malformed)
+			require.Equal(t, http.StatusBadRequest, w.Code, "admin")
+		})
+	}
+}
+
 func TestRequiredFieldsAreTrimmed(t *testing.T) {
 	t.Parallel()
 	r := newRouter(t)
