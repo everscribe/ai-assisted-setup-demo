@@ -191,8 +191,10 @@ routes, and nothing else. The grid says nothing about 400-class request
 validation (required fields, trimming, wrong types, the null rule, and
 unknown fields, which `validation_test.go` covers), nothing about
 protocol-level rules (trailing slashes, case sensitivity, HEAD and
-OPTIONS, Content-Type, the Allow header, the 401-before-403-before-400
-check order), and nothing about ordering or the idempotence of a repeated
+OPTIONS, Content-Type, the Allow header, and the
+401-before-403-before-400 check order, which
+`TestEveryBodyRouteChecksAuthAndRoleBeforeParsing` covers on every route
+that reads a body), and nothing about ordering or the idempotence of a repeated
 decommission. Those live in other tests and in cross-app equality. A full
 grid across every rule in the contract would be a different and much
 larger document; read this one's totals as "the security columns are

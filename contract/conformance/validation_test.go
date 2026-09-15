@@ -276,6 +276,73 @@ func TestDotSegmentPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 	}
 }
 
+// Check precedence, on every route that reads a body: 401 first, then
+// 403, then the body. The contract names POST /api/resources as its
+// worked example and names FastAPI as a framework that reorders this,
+// so a port that binds a body model before the role check answers 400 or
+// 422 where 403 belongs.
+//
+// The malformed body is what makes each row discriminate. A valid body
+// would answer 403 whichever order the handler ran its checks in, which
+// is why TestMemberCannotUseAdminRoutes, which sends valid bodies, never
+// saw this: moving require_admin after the body read in the Python app
+// left the whole four-app run green.
+//
+// The admin row is the positive control. Without it a route that refused
+// everyone would pass, since 403 for a member proves nothing on its own.
+//
+// Asserted per app rather than left to cross-app equality, for the same
+// reason the null-field test gives: equality only catches a divergence,
+// and four ports that all parsed first would agree with each other and
+// still be wrong. The lifecycle carries the admin-gated rows too, so a
+// single port diverging is also named by step, but this is the layer
+// that makes the rule absolute.
+func TestEveryBodyRouteChecksAuthAndRoleBeforeParsing(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			// Every authenticated route that reads a body. login is
+			// absent on purpose: it is anonymous, so it has no earlier
+			// check to run ahead of the parse.
+			for _, r := range []struct {
+				name, method, path string
+				adminOnly          bool
+			}{
+				{"POST /api/members", http.MethodPost, "/api/members", true},
+				{"PUT /api/members/{id}/role", http.MethodPut, "/api/members/u_linus/role", true},
+				{"POST /api/resources", http.MethodPost, "/api/resources", true},
+				{"POST /api/resources/{id}/requests", http.MethodPost, "/api/resources/r_acme_pg/requests", false},
+				{"POST /api/requests/{id}/comments", http.MethodPost, "/api/requests/req_acme_1/comments", false},
+			} {
+				const malformed = `{`
+
+				anon := validated(t, c, r.method, r.path, "", malformed)
+				require.Equal(t, http.StatusUnauthorized, anon.Status,
+					"%s: no actor plus a malformed body must be 401, not 400", r.name)
+
+				want := http.StatusBadRequest
+				if r.adminOnly {
+					want = http.StatusForbidden
+				}
+				member := validated(t, c, r.method, r.path, "u_linus", malformed)
+				require.Equal(t, want, member.Status,
+					"%s: a member plus a malformed body", r.name)
+				if r.adminOnly {
+					require.JSONEq(t, `{"error":"admin role required"}`, string(member.Body), r.name)
+				}
+
+				// Positive control: the same body from an admin reaches
+				// the 400 the member never gets to.
+				admin := validated(t, c, r.method, r.path, "u_ada", malformed)
+				require.Equal(t, http.StatusBadRequest, admin.Status,
+					"%s: an admin plus a malformed body must reach the parse", r.name)
+			}
+		})
+	}
+}
+
 // TestEscapableCharactersSurviveARoundTrip is the absolute half of the
 // JSON-escaping rule. TestAppsAgreeWithEachOther only pins agreement: if
 // all four ports stripped "<", its comparison would still pass and the

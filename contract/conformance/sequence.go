@@ -129,6 +129,23 @@ func Lifecycle() []Step {
 		{"encoded dot-dot in an id, no actor", "GET", "/api/resources/%2e%2e/requests", "", ""},
 		{"encoded slash in an id, no actor", "GET", "/api/resources/%2F/requests", "", ""},
 
+		// Check precedence, on every admin-gated route that reads a
+		// body. The malformed body is what makes these discriminate: a
+		// port that parses before it checks the role answers 400 or 422
+		// where the contract requires 403, which is exactly what FastAPI
+		// does with a Pydantic body model bound as a route parameter.
+		// The admin rows are the positive control: the same body from an
+		// admin reaches the 400 the member never gets to, so a route that
+		// refused everyone could not pass this block. All six are
+		// rejected before any store is touched, so the script stays
+		// re-runnable and no list comparison above them moves.
+		{"malformed body, member, invite member", "POST", "/api/members", "u_linus", `{`},
+		{"malformed body, admin, invite member", "POST", "/api/members", "u_ada", `{`},
+		{"malformed body, member, role change", "PUT", "/api/members/u_linus/role", "u_linus", `{`},
+		{"malformed body, admin, role change", "PUT", "/api/members/u_linus/role", "u_ada", `{`},
+		{"malformed body, member, register resource", "POST", "/api/resources", "u_linus", `{`},
+		{"malformed body, admin, register resource", "POST", "/api/resources", "u_ada", `{`},
+
 		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
 		{"method mismatch", "GET", "/api/login", "u_ada", ""},
 		{"logout", "POST", "/api/logout", "u_ada", ""},
