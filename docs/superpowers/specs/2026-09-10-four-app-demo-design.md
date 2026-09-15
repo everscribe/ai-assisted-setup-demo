@@ -395,13 +395,21 @@ Six lines of table plus a header whitelist is cheaper than the thirty-row
 behaviour table that was rejected, and closes more than the header change
 alone would. That is Plan 4's Task 0.
 
-An accepted known divergence, recorded rather than fixed: `/api/%6de`
-returns a user record on Go and 404 on Node, because Gin reads `URL.Path`
-with `UseRawPath` off while Express matches the raw path. This is NOT another
-instance of the unchecked-rule argument above; it is a verified current
-disagreement on the one property this section says matters. It is waived
-because nobody will type that at a demo. Note it will grow rather than stay
-at two apps, since Rust and Python will each land on one side unpredictably.
+That divergence is decided, not waived. `/api/%6de` returned a user record
+on Go and a 404 on Node; Rust landed on Node's side, and on a path parameter
+(`/api/%72esources`) the split was the same two to one, so the raw reading
+was already the majority and pinning it cost one app rather than three. The
+rule now reads: a percent-encoded octet in a path under `/api` is not
+decoded before routing, which is the same byte-for-byte rule the trailing
+slash, the empty segment and path case sensitivity already state, and the
+scoping to `/api` is the empty segment's, for the same reason. `apps/go`
+sets Gin's `UseRawPath`; Node and Rust needed no change. `UnescapePathValues`
+stays on with it, because all three already decode an octet inside a
+captured id and turning that off wholesale would have traded one divergence
+for another, so the contract pins that half too. Both halves live in
+`contract/openapi.yaml`'s prose block beside the three rules they match, and
+`Lifecycle()` replays both, so the fourth app is measured against the rule
+rather than landing on a side at random.
 
 ### The harness survives instrumentation
 

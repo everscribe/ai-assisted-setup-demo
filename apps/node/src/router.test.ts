@@ -26,6 +26,25 @@ describe("router", () => {
     expect(r.body).toEqual({ error: "not found" });
   });
 
+  it("does not decode a percent-encoded octet before routing", async () => {
+    // Express matches the raw path, so /api/%6de is an unregistered
+    // path. Gin decoded it and served /api/me until the contract
+    // pinned this.
+    for (const path of ["/api/%6de", "/api/%72esources"]) {
+      const r = await request(app).get(path).set("X-User-ID", "u_ada");
+      expect(r.status, path).toBe(404);
+      expect(r.body).toEqual({ error: "not found" });
+    }
+
+    // Raw routing is not raw path parameters: a captured id is decoded.
+    const encoded = await request(app)
+      .get("/api/resources/r%5Facme_pg/requests").set("X-User-ID", "u_ada");
+    const plain = await request(app)
+      .get("/api/resources/r_acme_pg/requests").set("X-User-ID", "u_ada");
+    expect(encoded.status).toBe(200);
+    expect(encoded.body).toEqual(plain.body);
+  });
+
   it("returns an identical 404 for an unknown path and a cross-tenant miss", async () => {
     const unknown = await request(app).get("/api/nope").set("X-User-ID", "u_ada");
     const cross = await request(app)

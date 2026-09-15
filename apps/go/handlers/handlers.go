@@ -141,6 +141,13 @@ func Router(s store.Store) *gin.Engine {
 	r.RedirectTrailingSlash = false
 	r.RedirectFixedPath = false
 
+	// Route on the raw path, so /api/%6de is an unregistered path and
+	// not /api/me. Gin reads URL.Path, already decoded, unless this is
+	// set. UnescapePathValues stays on, which is gin's default: a
+	// captured :id is still decoded, as Express and axum do.
+	r.UseRawPath = true
+	r.UnescapePathValues = true
+
 	// A path that exists under a different method is a 405, not a 404.
 	r.HandleMethodNotAllowed = true
 	r.NoMethod(func(c *gin.Context) {

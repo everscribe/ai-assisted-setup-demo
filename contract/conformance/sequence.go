@@ -86,6 +86,15 @@ func Lifecycle() []Step {
 		{"invite a duplicate email", "POST", "/api/members", "u_ada", `{"name":"Ada Impostor","email":"ada@acme.test","role":"member"}`},
 		{"login with the duplicated email", "POST", "/api/login", "", `{"email":"ada@acme.test"}`},
 
+		// A percent-encoded octet is not decoded before routing, so
+		// /api/%6de is an unregistered path, while an octet inside a
+		// captured id is decoded and names the same row the plain
+		// spelling does. Go answered the first with Ada's record until
+		// the contract pinned it. Both are reads, so the script stays
+		// re-runnable and no list comparison above them moves.
+		{"percent-encoded path", "GET", "/api/%6de", "u_ada", ""},
+		{"percent-encoded id", "GET", "/api/resources/r%5Facme_pg/requests", "u_ada", ""},
+
 		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
 		{"method mismatch", "GET", "/api/login", "u_ada", ""},
 		{"logout", "POST", "/api/logout", "u_ada", ""},

@@ -455,6 +455,28 @@ mod tests {
         }
     }
 
+    /// A percent-encoded octet is not decoded before routing, so
+    /// /api/%6de is an unregistered path. Gin decoded it and served
+    /// Ada's record until the contract pinned this.
+    #[tokio::test]
+    async fn a_percent_encoded_octet_is_not_decoded_before_routing() {
+        let app = app().await;
+
+        for uri in ["/api/%6de", "/api/%72esources"] {
+            let res = call(&app, "GET", uri, Some("u_ada"), None).await;
+            assert_eq!(res.status, StatusCode::NOT_FOUND, "{uri}");
+            assert_eq!(res.body, r#"{"error":"not found"}"#, "{uri}");
+        }
+
+        // Raw routing is not raw path parameters: a captured id is decoded.
+        let encoded =
+            call(&app, "GET", "/api/resources/r%5Facme_pg/requests", Some("u_ada"), None).await;
+        let plain =
+            call(&app, "GET", "/api/resources/r_acme_pg/requests", Some("u_ada"), None).await;
+        assert_eq!(encoded.status, StatusCode::OK);
+        assert_eq!(encoded.body, plain.body);
+    }
+
     // ---- bodies: trimming, nulls, unknown fields -----------------------
 
     #[tokio::test]

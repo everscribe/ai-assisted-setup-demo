@@ -112,6 +112,31 @@ func TestTrailingSlashIs404NotRedirect(t *testing.T) {
 	require.JSONEq(t, `{"error":"not found"}`, w.Body.String())
 }
 
+func TestPercentEncodedPathIsNotDecodedBeforeRouting(t *testing.T) {
+	t.Parallel()
+	r := newRouter(t)
+
+	// Gin reads URL.Path, already decoded, unless UseRawPath is set, so
+	// without it /api/%6de reached /api/me and returned Ada's record
+	// while Node and Rust answered 404.
+	for _, path := range []string{"/api/%6de", "/api/%72esources"} {
+		w := do(t, r, http.MethodGet, path, "u_ada", "")
+		require.Equal(t, http.StatusNotFound, w.Code, "GET %s", path)
+		require.Empty(t, w.Header().Get("Location"), "GET %s must not redirect", path)
+		require.JSONEq(t, `{"error":"not found"}`, w.Body.String(), "GET %s", path)
+	}
+
+	// Positive controls. The undecoded paths above must still be live
+	// when spelled literally, and a captured id is decoded: raw routing
+	// is not raw path parameters.
+	w := do(t, r, http.MethodGet, "/api/me", "u_ada", "")
+	require.Equal(t, http.StatusOK, w.Code)
+
+	w = do(t, r, http.MethodGet, "/api/resources/r%5Facme_pg/requests", "u_ada", "")
+	require.Equal(t, http.StatusOK, w.Code, "a percent-encoded octet in an id is decoded")
+	require.Equal(t, do(t, r, http.MethodGet, "/api/resources/r_acme_pg/requests", "u_ada", "").Body.String(), w.Body.String())
+}
+
 func TestHeadAndOptionsAre405(t *testing.T) {
 	t.Parallel()
 	r := newRouter(t)

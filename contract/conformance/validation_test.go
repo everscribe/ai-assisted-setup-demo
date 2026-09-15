@@ -146,6 +146,53 @@ func TestMixedCasePathIsTheSame404AsAnUnknownPath(t *testing.T) {
 	}
 }
 
+// A percent-encoded spelling of a registered path must be as anonymous
+// as an unknown path. Same leak as the mixed-case probe above: without
+// this, %6de answers 401 with no actor where an unregistered path
+// answers 404. Go served Ada's record here, because Gin reads URL.Path
+// with UseRawPath off, until the contract pinned the rule.
+func TestPercentEncodedPathIsTheSame404AsAnUnknownPath(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			unknown := validated(t, c, http.MethodGet, "/api/no-such-route", "u_ada", "")
+			require.Equal(t, http.StatusNotFound, unknown.Status)
+
+			for _, pair := range [][2]string{
+				{"/api/%6de", "/api/me"},
+				{"/api/%72esources", "/api/resources"},
+				{"/api/%6d%65mbers", "/api/members"},
+			} {
+				encoded, plain := pair[0], pair[1]
+
+				// Positive control: the decoded spelling must work, or a
+				// 404 on the encoded one proves nothing.
+				ok := validated(t, c, http.MethodGet, plain, "u_ada", "")
+				require.Equal(t, http.StatusOK, ok.Status, "positive control for %s", encoded)
+
+				got := validated(t, c, http.MethodGet, encoded, "u_ada", "")
+				require.Equal(t, unknown.Status, got.Status, encoded)
+				require.Equal(t, string(unknown.Body), string(got.Body), encoded)
+
+				anon := validated(t, c, http.MethodGet, encoded, "", "")
+				require.Equal(t, http.StatusNotFound, anon.Status,
+					"%s with no actor must not reveal that the path exists", encoded)
+			}
+
+			// Raw routing is not raw path parameters. An octet inside a
+			// captured id is decoded, so this names the same row the
+			// plain spelling does. A port that turns decoding off
+			// wholesale to pass the checks above fails here.
+			encodedID := validated(t, c, http.MethodGet, "/api/resources/r%5Facme_pg/requests", "u_ada", "")
+			plainID := validated(t, c, http.MethodGet, "/api/resources/r_acme_pg/requests", "u_ada", "")
+			require.Equal(t, http.StatusOK, encodedID.Status, "a percent-encoded octet in an id is decoded")
+			require.Equal(t, string(plainID.Body), string(encodedID.Body))
+		})
+	}
+}
+
 // lowercasePath lowercases a path for the positive controls above.
 func lowercasePath(p string) string {
 	out := []byte(p)
