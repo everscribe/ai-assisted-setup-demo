@@ -76,13 +76,28 @@ describe('MembersTab', () => {
     await roleSelect.setValue('admin')
     await flushPromises()
 
-    const updatedRow = rowFor(wrapper, 'New Person')!
+    // setValue() writes 'admin' straight onto the native select element, so
+    // reading that same element's .value back proves nothing: the select is
+    // bound with :value/@change rather than v-model, so nothing forces a
+    // render from application state, and the value read is just test-utils'
+    // own write. Assert what only the component can produce instead: that
+    // its change handler called the API with the right id and role.
+    expect(api.changeMemberRole).toHaveBeenCalledWith('u_new', 'admin')
+
+    // Then prove the row itself reflects the new role from the app's own
+    // state, not from the write above. A fresh mount reads the mock's
+    // updated data (changeMemberRole mutated the shared `members` array)
+    // into a select element setValue never touched.
+    const freshWrapper = mount(MembersTab, { props: { me: ada } })
+    await flushPromises()
+    const freshRow = rowFor(freshWrapper, 'New Person')!
     expect(
-      (updatedRow.find('select').element as HTMLSelectElement).value,
-      'role change should be reflected in the row',
+      (freshRow.find('select').element as HTMLSelectElement).value,
+      'role change should be reflected the next time this data is rendered',
     ).toBe('admin')
 
     // Remove the member.
+    const updatedRow = rowFor(wrapper, 'New Person')!
     const removeBtn = updatedRow.findAll('button').find((b) => b.text() === 'Remove')!
     await removeBtn.trigger('click')
     await flushPromises()
