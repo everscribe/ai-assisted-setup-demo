@@ -1,15 +1,14 @@
 //! In-memory Store. Every collection is a Vec behind one RwLock.
 //!
-//! Three rules taken from the contract. Ids are a type prefix plus random
-//! hex. Every list is a total order: the domain key, then id ascending,
-//! with created_at compared as a parsed instant rather than as a string.
-//! Tenant scoping lives here, and a cross-tenant target returns NotFound,
-//! identical to a missing row, so the boundary does not leak existence.
+//! Three rules from the contract: ids are a type prefix plus random hex;
+//! every list totally orders by domain key then id ascending, with
+//! created_at compared as a parsed instant, not a string; and tenant
+//! scoping returns NotFound for a cross-tenant target, identical to a
+//! missing row, so the boundary doesn't leak existence.
 //!
-//! Vec rather than HashMap because iteration order has to be defined. A
-//! HashMap would hand the sort an arbitrary order, so dropping the id
-//! tiebreak would produce a different answer run to run instead of a
-//! reproducibly wrong one, and the ordering test could not pin it.
+//! Vec rather than HashMap: a HashMap's arbitrary iteration order would
+//! turn a dropped id tiebreak into a different wrong answer each run
+//! instead of a reproducible one, which the ordering test couldn't pin.
 
 use chrono::Utc;
 use tokio::sync::RwLock;

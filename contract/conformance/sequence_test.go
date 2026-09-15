@@ -21,18 +21,15 @@ const requirePristineExplanation = "\nIf this app has already run the conformanc
 	"If this is a fresh app, its seed genuinely disagrees with contract/seed.json."
 
 // requirePristine asserts the two seeded rows the lifecycle mutates start
-// in the state seed.json claims. The seed test cannot check them, because
-// it exempts exactly these fields so the suite stays re-runnable. Running
-// once per app, before any replay, is what closes that hole.
+// in the state seed.json claims. The seed test can't check them, since it
+// exempts exactly these fields to stay re-runnable; running this once per
+// app, before any replay, closes that hole.
 //
-// Trade-off, on purpose: this guard needs a pristine app, and the
-// lifecycle it guards mutates these two rows on every run. Both cannot
-// hold across repeated runs against one unrestarted app, so a second
-// `go test` against a `make up` you have already exercised will now fail
-// here. That is expected, not a bug to fix by deleting the guard: `make
-// verify` always starts fresh, so CI and the real acceptance path never
-// hit this. Only the manual "make up, then go test twice" loop does, and
-// the failure message says why.
+// Trade-off, on purpose: this guard needs a pristine app, but the
+// lifecycle it guards mutates these two rows every run. A second `go
+// test` against an already-exercised `make up` will fail here - that's
+// expected, not a bug to fix by deleting the guard. `make verify` always
+// starts fresh, so CI never hits this; only a manual repeat run does.
 func requirePristine(t *testing.T, c *Client) {
 	t.Helper()
 	v, _ := pristineOnce.LoadOrStore(c.App.Name, &sync.Once{})

@@ -29,16 +29,14 @@ func sharedSpec(t *testing.T) *Spec {
 }
 
 // apps returns the running apps. With nothing up it skips, so
-// `go test ./...` stays green on a machine running no apps. When
-// CONFORMANCE_REQUIRE_APPS is set, which `make verify` does, it fails
-// instead: a run that checked nothing must never report as a pass.
+// `go test ./...` stays green with no apps running. CONFORMANCE_REQUIRE_APPS
+// (set by `make verify`) fails instead: a run that checked nothing must
+// never report as a pass.
 //
-// CONFORMANCE_EXPECT_APPS goes further and names how many apps the
-// caller knows should be there. `make verify` derives it from
-// docker-compose.yml, the same file the readiness loop derives its ports
-// from. Without it, an app present in the roster but absent from compose
-// is silently never tested and verify still exits 0, because discovery
-// only fails when every app is missing.
+// CONFORMANCE_EXPECT_APPS names how many apps should be there, derived by
+// `make verify` from docker-compose.yml. Without it, an app missing from
+// compose but still in the roster is silently never tested and verify
+// still exits 0, since discovery only fails when every app is missing.
 func apps(t *testing.T) []App {
 	t.Helper()
 	up := Discover(context.Background())

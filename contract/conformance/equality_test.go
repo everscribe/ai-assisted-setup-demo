@@ -23,17 +23,14 @@ const (
 	invalidBodyCanonical = "invalid body"
 )
 
-// tsPlaceholder matches one of Normalizer's $ts1, $ts2, ... values
-// exactly. Collapsed to a single constant before cross-app comparison
-// only: Go emits microsecond timestamps, Node emits millisecond, so two
-// runtime writes that land in the same millisecond are one distinct
-// value in Node's response and two in Go's, even though both apps are
-// conformant (the contract allows any fractional precision).
-// Distinctness of a placeholder number is a clock-resolution artifact,
-// not app behaviour, so it must not be compared across apps. Normalizer
-// itself keeps numbering timestamps, since normalize_test.go pins that a
-// repeated timestamp within one app's own output maps to one
-// placeholder.
+// tsPlaceholder matches one of Normalizer's $ts1, $ts2, ... values exactly.
+// Collapsed to one constant only for cross-app comparison: Go emits
+// microsecond timestamps, Node millisecond, so writes landing in the same
+// millisecond are one distinct value in Node's output and two in Go's,
+// though both are conformant (any fractional precision is allowed). That
+// distinctness is a clock-resolution artifact, not app behavior. Normalizer
+// itself still numbers timestamps per app, since normalize_test.go pins a
+// repeated timestamp mapping to one placeholder within a single app's output.
 var tsPlaceholder = regexp.MustCompile(`^\$ts\d+$`)
 
 // Only these two. Comparing every header would drag in Date and
@@ -61,23 +58,18 @@ func canonicalizeAllow(v string) string {
 }
 
 // canonicalize collapses timestamp placeholders (see tsPlaceholder) and
-// sorts array elements into a stable order, so two apps' responses
-// compare equal regardless of a clock-resolution-driven ordering tie.
-// A tie in created_at is app-specific: Node's millisecond clock ties two
-// rows Go's microsecond clock never does, so Node applies the contract's
-// id tiebreak (a random generated string) where Go never needs to. Both
-// apps correctly follow the ordering rule against their own data, but
-// the resulting relative order of the tied rows is then not portable
-// across apps, only the set of rows is. Object key order was already
+// sorts array elements into a stable order, so two apps compare equal
+// despite a clock-resolution-driven ordering tie: Node's millisecond
+// clock ties rows Go's microsecond clock never does, so Node applies the
+// contract's id tiebreak where Go never needs to. Both apps follow the
+// ordering rule correctly, but the tied rows' relative order isn't
+// portable across apps, only the set is. Object key order is already
 // deterministic (Normalizer sorts map keys), so only arrays need this.
 //
-// This recurses into nested arrays unconditionally, so a sort here
-// hides order for any array at any depth, not just the top-level list
-// endpoints. No schema in this contract has a nested array today, so
-// that is latent, not live, but a later port adding one would have its
-// order silently unchecked by this test. ordering_test.go's per-app
-// property check is what still catches an ordering bug in a single
-// list; this function's job is only to make two apps' sets comparable.
+// Recurses into nested arrays unconditionally. No schema here has one
+// today, so an ordering bug at that depth is latent, not live, but this
+// function's job is only cross-app set comparison - ordering_test.go's
+// per-app property check is what catches an ordering bug in a single list.
 func canonicalize(v any) any {
 	switch t := v.(type) {
 	case map[string]any:

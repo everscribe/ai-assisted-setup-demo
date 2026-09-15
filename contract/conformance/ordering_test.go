@@ -51,25 +51,17 @@ func assertDeclaredOrder(t *testing.T, path string, rows []orderedRow, descendin
 }
 
 // The contract's x-ordering block declares a total order for every list
-// endpoint: the domain key, then id ascending as tiebreak. These two
-// fixtures each contain a pair tied on created_at, so they fail for any
-// app that drops the tiebreak or serves insertion order.
+// endpoint: domain key, then id ascending as tiebreak. These fixtures each
+// hold a pair tied on created_at, so they fail for any app that drops the
+// tiebreak or serves insertion order.
 //
-// Go runs a package's test files in alphabetical order, so equality_test.go
-// (added in Task 6, which replays this same lifecycle) runs before this
-// file. The assertions below still hold against that run, but only for two
-// non-obvious reasons, so a change to the lifecycle does not silently
-// invalidate them and look like a port bug:
-//
-//  1. Seeded comments carry March 2026 timestamps while the lifecycle's
-//     runtime comments use time.Now() (September 2026), so under the
-//     declared ascending order the seeded three remain the prefix.
-//  2. The lifecycle's new access request goes to r_acme_s3, not r_acme_pg,
-//     and no test in this package mints requests against r_acme_pg either,
-//     so the requests fixture on r_acme_pg stays untouched by any prior
-//     test. Anything that starts minting there breaks this fixture on a
-//     second run against the same app, since a fresh request sorts ahead
-//     of the seeded March 2026 pair under the declared descending order.
+// Go runs test files alphabetically, so equality_test.go (which replays
+// this lifecycle) runs first. These assertions still hold only because:
+//  1. seeded comments carry March 2026 timestamps vs. the lifecycle's
+//     time.Now(), keeping the seeded three as the ascending prefix; and
+//  2. the lifecycle's new request goes to r_acme_s3, and nothing else here
+//     mints against r_acme_pg, so a fresh request there would sort ahead
+//     of the seeded pair under descending order and break this fixture.
 func TestSeededListsMatchTheDeclaredOrder(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

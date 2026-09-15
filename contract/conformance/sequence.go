@@ -60,39 +60,35 @@ func Lifecycle() []Step {
 		{"unparseable body", "POST", "/api/resources/r_nope/requests", "u_linus", `{`},
 		{"role not trimmed", "PUT", "/api/members/u_linus/role", "u_ada", `{"role":" admin "}`},
 
-		// Two more rules the contract states and nothing here exercised.
-		// A rule the harness is blind to is the mistake the six steps
-		// above were added to correct, so neither arrived as contract
-		// text alone.
+		// Two more rules the contract states and the harness didn't
+		// exercise before these steps were added.
 		//
-		// A case variant of a field name is an unknown field, so this
-		// login must answer as {} does. Go bound it and returned 200
-		// with Ada's record while Node and Rust answered 400, on login
-		// and on the role change.
+		// A case-variant field name is an unknown field, so login must
+		// answer as {} does: Go bound it and returned 200 with Ada's
+		// record while Node and Rust answered 400, on login and on the
+		// role change.
 		//
-		// A path with an empty segment is the API's own JSON 404. Go
-		// answered 301 with an HTML body, Rust 200 with Ada's record,
-		// Node 404.
+		// An empty path segment is the API's own JSON 404: Go answered
+		// 301 with an HTML body, Rust 200 with Ada's record, Node 404.
 		//
-		// Both are rejected requests: neither reaches a store, so no
-		// list above them changes and a replay answers identically.
+		// Both are rejected requests, so no list above them changes and
+		// a replay answers identically.
 		{"case-variant field name on login", "POST", "/api/login", "", `{"Email":"ada@acme.test"}`},
 		{"empty path segment", "GET", "/api//me", "u_ada", ""},
 
-		// Emails are not unique, so login has to say which of two users
-		// sharing one it returns. These two steps put that answer in front
-		// of the equality layer, so a port resolving the duplicate
-		// differently from the others fails here.
+		// Emails are not unique, so login must say which of two users
+		// sharing one it returns. These steps put that answer in front of
+		// the equality layer, so a port resolving the duplicate
+		// differently fails here too.
 		//
-		// They do not check the ordering rule openapi.yaml states for that
-		// lookup. They cannot: a duplicate minted at runtime is always the
-		// later row, so created_at order and a store's own iteration order
-		// always agree here and a store that does no ordering passes. Each
-		// store's suite plants an older duplicate to pin the rule itself.
-		// See TestAppsAgreeWhichUserADuplicateEmailResolvesTo.
+		// They don't check the ordering rule openapi.yaml states for the
+		// lookup: a duplicate minted at runtime is always the later row,
+		// so created_at order and a store's own iteration order always
+		// agree, and a store doing no ordering passes. Each store's suite
+		// plants an older duplicate to pin that rule; see
+		// TestAppsAgreeWhichUserADuplicateEmailResolvesTo.
 		//
-		// Both steps come after "members after invite" so no list
-		// comparison above them changes, and replaying the script only
+		// Both steps come after "members after invite", so replaying only
 		// adds another duplicate, which changes no answer.
 		{"invite a duplicate email", "POST", "/api/members", "u_ada", `{"name":"Ada Impostor","email":"ada@acme.test","role":"member"}`},
 		{"login with the duplicated email", "POST", "/api/login", "", `{"email":"ada@acme.test"}`},
@@ -129,16 +125,15 @@ func Lifecycle() []Step {
 		{"encoded dot-dot in an id, no actor", "GET", "/api/resources/%2e%2e/requests", "", ""},
 		{"encoded slash in an id, no actor", "GET", "/api/resources/%2F/requests", "", ""},
 
-		// Check precedence, on every admin-gated route that reads a
-		// body. The malformed body is what makes these discriminate: a
-		// port that parses before it checks the role answers 400 or 422
-		// where the contract requires 403, which is exactly what FastAPI
-		// does with a Pydantic body model bound as a route parameter.
-		// The admin rows are the positive control: the same body from an
-		// admin reaches the 400 the member never gets to, so a route that
-		// refused everyone could not pass this block. All six are
-		// rejected before any store is touched, so the script stays
-		// re-runnable and no list comparison above them moves.
+		// Check precedence, on every admin-gated route that reads a body.
+		// The malformed body is what makes these discriminate: a port
+		// that parses before checking role answers 400/422 where 403
+		// belongs, exactly what FastAPI does with a Pydantic body model
+		// bound as a route parameter. The admin rows are the positive
+		// control: the same body from an admin reaches the 400 a member
+		// never gets to, so a route refusing everyone couldn't pass this
+		// block. All six are rejected before any store is touched, so the
+		// script stays re-runnable.
 		{"malformed body, member, invite member", "POST", "/api/members", "u_linus", `{`},
 		{"malformed body, admin, invite member", "POST", "/api/members", "u_ada", `{`},
 		{"malformed body, member, role change", "PUT", "/api/members/u_linus/role", "u_linus", `{`},

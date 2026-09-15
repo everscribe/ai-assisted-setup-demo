@@ -87,20 +87,17 @@ func TestCommentOrderBreaksTiesOnID(t *testing.T) {
 }
 
 // TestDuplicateEmailResolvesToTheEarliestUser pins that the login lookup
-// answers the same way every time once an email matches more than one
-// user. It is a determinism test, not an ordering test. Every duplicate
-// it can mint through InviteMember is later than the seeded user and
-// carries its own created_at, so the id tiebreak is never reached:
-// dropping that tiebreak leaves this test green across 20 runs.
-// TestDuplicateEmailPrefersTheOlderRow in memory_internal_test.go plants
-// an older row and a tied one, and is what pins the order itself.
+// answers the same way every time, once an email matches more than one
+// user - a determinism test, not an ordering test. Every duplicate minted
+// via InviteMember is later than the seeded user, so the id tiebreak is
+// never reached; TestDuplicateEmailPrefersTheOlderRow in
+// memory_internal_test.go pins the order itself.
 //
 // This lookup used to range the users map and return the first hit, and
-// Go randomizes map iteration, so the answer changed run to run once a
-// duplicate existed. Five duplicates plus 500 lookups is what makes the
-// test able to fail: the old code picks the seeded user roughly one time
-// in six, so surviving 500 consecutive lookups by luck has probability
-// about (1/6)^500. Observed: the old code fails this on the first few
+// Go randomizes map iteration, so the answer varied run to run. Five
+// duplicates plus 500 lookups makes the test able to fail: the old code
+// picked the seeded user about 1 in 6 times, so surviving 500 lookups by
+// luck is about (1/6)^500. Observed: the old code failed within a few
 // iterations, the sorted one never does.
 func TestDuplicateEmailResolvesToTheEarliestUser(t *testing.T) {
 	t.Parallel()

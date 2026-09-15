@@ -93,22 +93,19 @@ func TestCrossTenantAndUnknownPathAreIndistinguishable(t *testing.T) {
 	}
 }
 
-// A 404 on a cross-tenant read only proves the reader is blocked. The
-// write routes are where a missing tenant filter does damage, so an
-// acme admin reaching into globex is asserted here too, each case
-// paired with a same-tenant positive control on the same route: a
-// cross-tenant miss and an unregistered route are byte-identical by
-// design, so without the control the assertion passes on a route that
-// does not exist at all.
+// A 404 on a cross-tenant read only proves the reader is blocked; the write
+// routes are where a missing tenant filter does damage. Each case pairs a
+// cross-tenant attempt with a same-tenant positive control on the same
+// route, since a cross-tenant miss and an unregistered route are
+// byte-identical by design - without the control this would pass against
+// a route that doesn't exist at all.
 //
 // Deny and revoke are included alongside decommission and approve: all
-// four are admin-only mutations on a single id-named object, and all
-// four were found missing a cross-tenant control in the same review that
-// found decommission and approve already covered here.
+// four are admin-only mutations on a single id-named object, found
+// missing a cross-tenant control in the same review.
 //
-// Every fixture the controls consume is minted here. Decommissioning or
-// approving/denying/revoking a seeded acme row would disturb fixtures
-// other tests pin.
+// Fixtures are minted here rather than seeded, since mutating a seeded
+// acme row would disturb fixtures other tests pin.
 func TestCrossTenantWritesAre404WithPositiveControls(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -151,15 +148,14 @@ func TestCrossTenantWritesAre404WithPositiveControls(t *testing.T) {
 	}
 }
 
-// The organization filter runs before the store's state check on every
-// mutation here, so a cross-tenant deny/revoke 404s regardless of the
-// target's real status: req_globex_1 is seeded approved and is never
-// denied or revoked by this test, only probed.
+// The organization filter runs before the store's state check, so a
+// cross-tenant deny/revoke 404s regardless of the target's real status:
+// req_globex_1 is seeded approved and is only probed, never denied or
+// revoked by this test.
 //
-// The two member-initiated write routes - requesting access and
-// commenting - are neither admin-gated nor id-of-a-user routes, so they
-// do not fit TestCrossTenantWritesAre404WithPositiveControls or
-// TestCrossTenantMemberWrites. Each acts as u_linus, an ordinary acme
+// Requesting access and commenting are neither admin-gated nor
+// id-of-a-user routes, so they don't fit TestCrossTenantWritesAre404WithPositiveControls
+// or TestCrossTenantMemberWrites; each acts as u_linus, an ordinary acme
 // member, against a globex target.
 func TestCrossTenantMemberInitiatedWritesAre404WithPositiveControls(t *testing.T) {
 	for _, app := range apps(t) {
@@ -316,21 +312,17 @@ func mintStripeRequest(t *testing.T, c *Client, reason string) string {
 
 // All eight admin-gated routes are listed, not a sample, the same way
 // TestMissingActorIs401 lists all sixteen authenticated routes. The four
-// destructive ones - revoke, remove member, change role, decommission -
-// are where a neutered gate does the most damage: a member who can
-// change roles promotes himself to admin and the rest of the gate stops
-// mattering.
+// destructive ones (revoke, remove member, change role, decommission)
+// matter most: a member who can change roles promotes himself to admin.
 //
-// Each route is paired with a positive control: an admin must succeed on
-// the same route first. Without that, refusing u_linus only proves he is
-// refused, not that the refusal is about role - a gate keyed on his user
-// id instead of his role would pass this test too. The refusal is also
-// checked against a second, freshly-invited member who is not u_linus,
-// so a gate that denies "u_linus" by name has nowhere to hide either.
+// Each route pairs with a positive control, since refusing u_linus alone
+// only proves he's refused, not that it's about role - a gate keyed on
+// his user id would pass too. It's also checked against a second,
+// freshly-invited member, so a gate keyed on the name has nowhere to hide.
 //
-// Every fixture the controls consume is minted here. No seeded member is
-// removed or promoted, no seeded resource is decommissioned, and nothing
-// is minted against r_acme_pg, whose request list ordering_test.go pins.
+// Fixtures are minted here: no seeded member/resource is touched, and
+// nothing is minted against r_acme_pg, whose request order
+// ordering_test.go pins.
 func TestMemberCannotUseAdminRoutes(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -457,22 +449,17 @@ func TestApprovingNonPendingRequestIs409(t *testing.T) {
 	}
 }
 
-// Denying a pending request must work before a 409 on the same request,
-// now denied, means anything - the same positive-control shape as
-// TestDeniedRequestCannotBeApproved, but asserting deny's own 409
-// instead of leaning on approve's. A fresh request is minted rather than
-// reusing a seeded one so this test needs nothing else to have run
-// first.
+// Denying a pending request must work before a 409 on the same, now
+// denied, request means anything - the same positive-control shape as
+// TestDeniedRequestCannotBeApproved, asserting deny's own 409 instead of
+// leaning on approve's. A fresh request is minted so this test needs
+// nothing else to have run first.
 //
-// Three wrong states are checked, not one: denying an already-denied
-// request (re-entry into the same state), denying an approved request,
-// and denying a revoked request - the two other states a request can
-// reach that are not pending. A guard written as "== denied" instead of
-// "!= pending" passes the first case and fails the second and third, so
-// a test asserting only re-entry would not have caught it - which is
-// exactly the guard a reviewer found slipping through here. A guard
-// written as an enumeration of wrong states that happens to omit
-// "revoked" would pass the first two cases and fail only the third.
+// Three wrong states are checked, not one: already-denied (re-entry),
+// approved, and revoked. A guard written as "== denied" instead of
+// "!= pending" passes re-entry but fails the other two; one written as
+// an enumeration that omits "revoked" passes the first two and fails
+// only the third.
 func TestDenyingNonPendingRequestIs409(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -510,22 +497,16 @@ func TestDenyingNonPendingRequestIs409(t *testing.T) {
 	}
 }
 
-// Revoking an approved request must work before a second revoke on the
-// same, now-revoked request 409s. Approving it first is also a positive
-// control: without a working approve, the request would never reach
-// approved and the first revoke could not be attributed to revoke
-// working correctly either.
+// Revoking an approved request must work before a second revoke 409s.
+// Approving it first is also a positive control: without a working
+// approve, the request would never reach approved, so the first revoke
+// couldn't be attributed to revoke working correctly either.
 //
-// Three wrong states are checked, not one: revoking an already-revoked
-// request (re-entry into the same state), revoking a request that was
-// never approved at all (reached directly from pending with no approve
-// step), and revoking a denied request - the two other states a request
-// can reach that are not approved. A guard written as "== revoked"
-// instead of "!= approved" passes the first case and fails the second
-// and third, so a test asserting only re-entry would not have caught it
-// - which is exactly the guard a reviewer found slipping through here.
-// A guard written as an enumeration of wrong states that happens to
-// omit "denied" would pass the first two cases and fail only the third.
+// Three wrong states are checked, not one: already-revoked (re-entry),
+// never approved (pending with no approve step), and denied. A guard
+// written as "== revoked" instead of "!= approved" passes re-entry but
+// fails the other two; one written as an enumeration that omits "denied"
+// passes the first two and fails only the third.
 func TestRevokingNonApprovedRequestIs409(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -560,15 +541,11 @@ func TestRevokingNonApprovedRequestIs409(t *testing.T) {
 }
 
 // This is the test named in COVERAGE-MATRIX.md's NOT COVERED list whose
-// absence let a no-op DecommissionResource pass the whole suite: nothing
-// previously checked that decommissioning a resource actually changes
-// its state, only that the decommission call itself returned 200. The
-// positive control here (requesting access to the resource while it is
-// still live) is what makes the 409 afterward mean "decommission took
-// effect" rather than "this route always 409s" - and it is also exactly
-// the check that fails if DecommissionResource is neutered back into a
-// no-op, since a resource whose decommission_at was never set keeps
-// accepting new requests instead of rejecting them.
+// absence let a no-op DecommissionResource pass the whole suite. The
+// positive control (requesting access while the resource is still live)
+// is what makes the 409 afterward mean "decommission took effect" rather
+// than "this route always 409s", and it's exactly what fails if
+// DecommissionResource is neutered into a no-op.
 func TestRequestingAccessToDecommissionedResourceIs409(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -593,15 +570,14 @@ func TestRequestingAccessToDecommissionedResourceIs409(t *testing.T) {
 }
 
 // Decommission is idempotent: a second call returns 200 again and
-// re-stamps decommission_at, rather than 409. This is one of the two
-// contract amendments this repo's plan exists to pin, and until now it
-// was only caught incidentally, by the lifecycle being replayed twice in
-// one run. An incidental catch is not a named assertion: drop the second
-// replay and the amendment goes unchecked. This asserts it directly.
+// re-stamps decommission_at, rather than 409. This is one of two contract
+// amendments this repo's plan exists to pin; previously it was only
+// caught incidentally by the lifecycle replaying twice in one run, so
+// dropping that replay would leave it unchecked. This asserts it directly.
 //
-// The re-stamp is asserted, not just the status, because a store that
+// The re-stamp is asserted, not just the status, since a store that
 // returned the existing row unchanged would also answer 200 twice and
-// satisfy a status-only check while breaking what the contract promises.
+// pass a status-only check while breaking the contract's promise.
 func TestDecommissionIsIdempotentAndRestampsTheTimestamp(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

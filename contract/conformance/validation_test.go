@@ -259,27 +259,20 @@ func TestDotSegmentPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 	}
 }
 
-// Check precedence, on every route that reads a body: 401 first, then
-// 403, then the body. The contract names POST /api/resources as its
-// worked example and names FastAPI as a framework that reorders this,
-// so a port that binds a body model before the role check answers 400 or
-// 422 where 403 belongs.
+// Check precedence, on every route that reads a body: 401 first, then 403,
+// then the body. The contract names POST /api/resources as its worked
+// example and FastAPI as a framework that reorders this, so a port binding
+// a body model before the role check answers 400/422 where 403 belongs.
 //
-// The malformed body is what makes each row discriminate. A valid body
-// would answer 403 whichever order the handler ran its checks in, which
-// is why TestMemberCannotUseAdminRoutes, which sends valid bodies, never
-// saw this: moving require_admin after the body read in the Python app
-// left the whole four-app run green.
+// The malformed body is the discriminator, since a valid body answers 403
+// regardless of check order (confirmed: moving require_admin after the body
+// read in the Python app stayed green under valid-body tests). The admin
+// row is a positive control: without it, a route refusing everyone would
+// pass, since 403 for a member alone proves nothing.
 //
-// The admin row is the positive control. Without it a route that refused
-// everyone would pass, since 403 for a member proves nothing on its own.
-//
-// Asserted per app rather than left to cross-app equality, for the same
-// reason the null-field test gives: equality only catches a divergence,
-// and four ports that all parsed first would agree with each other and
-// still be wrong. The lifecycle carries the admin-gated rows too, so a
-// single port diverging is also named by step, but this is the layer
-// that makes the rule absolute.
+// Asserted per app, not left to cross-app equality, which only catches a
+// divergence: four ports that all parsed first would agree with each other
+// and still be wrong.
 func TestEveryBodyRouteChecksAuthAndRoleBeforeParsing(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -368,13 +361,11 @@ func TestEscapableCharactersSurviveARoundTrip(t *testing.T) {
 // requireDidNotReachTheAPI asserts the one property the contract pins
 // above the /api mount: the request never became an API answer.
 //
-// The status is deliberately not asserted. The static layer above the
-// mount is not specified by the contract, and the four apps genuinely
-// disagree there: GET /%2e is 301 on Go and Node, 307 on Rust and 404 on
-// Python, and GET /index.html is 301 on Go and 200 on the other three.
-// Pinning a status here would be pinning four static file servers to
-// each other for no product reason. What must hold on all four is the
-// security half: no user record comes back.
+// The status is deliberately not asserted: the static layer above the
+// mount is unspecified, and the four apps disagree (GET /%2e is 301 on
+// Go/Node, 307 on Rust, 404 on Python; GET /index.html is 301 on Go, 200
+// on the rest). What must hold on all four is the security half: no user
+// record comes back.
 func requireDidNotReachTheAPI(t *testing.T, c *Client, path string) {
 	t.Helper()
 

@@ -14,16 +14,14 @@ import (
 )
 
 // TestDuplicateEmailPrefersTheOlderRow pins the ordering half of the
-// login rule: created_at ascending, then id ascending.
-//
-// The external TestDuplicateEmailResolvesToTheEarliestUser pins the other
-// half, that the answer is stable. It can only mint duplicates through
-// InviteMember, which always stamps a later created_at and never a tied
-// one, so it never reaches the id tiebreak. This one plants a row older
-// than the seeded user and a second tied with it, straight into the map,
-// which is the only way either half of the comparator is exercised.
+// login rule: created_at ascending, then id ascending. The external
+// TestDuplicateEmailResolvesToTheEarliestUser pins the other half (that
+// the answer is stable), but can only mint via InviteMember, which always
+// stamps a later, untied created_at, never reaching the id tiebreak. This
+// test plants a row older than the seeded user, and a second tied with
+// it, directly into the map - the only way to exercise the comparator.
 // Observed: dropping the id tiebreak leaves the external test green and
-// turns this one red on every one of 20 runs.
+// this one red on every one of 20 runs.
 func TestDuplicateEmailPrefersTheOlderRow(t *testing.T) {
 	t.Parallel()
 	s := New()

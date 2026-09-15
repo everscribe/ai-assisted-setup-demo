@@ -19,21 +19,15 @@ import (
 
 // TestRemovingAMemberLeavesTheirHistory pins the no-cascade rule on
 // DELETE /api/members/{id}: the user row goes, the rows that point at it
-// stay, and requested_by and author_id keep naming an id that no longer
+// stay, and requested_by/author_id keep naming an id that no longer
 // resolves.
 //
-// This cannot be a lifecycle step. The lifecycle uses only seeded ids on
-// purpose, and every seeded user is load-bearing elsewhere in this
-// package: u_linus drives the member-role and cross-tenant cases, u_alan
-// and u_grace the globex half of the seed comparison. Removing any of
-// them would break tests that have nothing to do with cascading, and
-// would fail the seed comparison, which requires every seeded row to
-// still be served. So the probe mints its own member, which also leaves
-// the check re-runnable against an app that has already been exercised.
-//
-// The rows are read before the removal as well as after. "Still there"
-// asserted only afterwards would pass against an app where they were
-// never there.
+// This can't be a lifecycle step: every seeded user is load-bearing
+// elsewhere (u_linus, u_alan, u_grace), so removing one would break other
+// tests and the seed comparison. The probe mints its own member instead,
+// which also keeps the check re-runnable against an already-exercised app.
+// Rows are read before the removal as well as after, since "still there"
+// asserted only afterwards would pass against an app where they never were.
 func TestRemovingAMemberLeavesTheirHistory(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -84,30 +78,20 @@ func TestRemovingAMemberLeavesTheirHistory(t *testing.T) {
 }
 
 // TestAppsAgreeWhichUserADuplicateEmailResolvesTo pins that every app
-// answers POST /api/login with the same user when the email matches more
-// than one, and that the answer stays put as duplicates accumulate. For
-// the seeded fixture that answer is u_ada.
+// answers POST /api/login with the same user (u_ada, in the seeded
+// fixture) as duplicate emails accumulate.
 //
-// What this does NOT pin is the ordering rule openapi.yaml states for
-// that lookup, created_at ascending then id ascending. It cannot. Over
-// HTTP a duplicate can only be minted after the user it duplicates, so
-// the seeded row is always both the earliest by created_at and the first
-// in whatever order a store happens to iterate. A store doing no
-// ordering at all passes this test, and so does one keyed on insertion
-// order. Observed, not assumed: deleting the sort from apps/node's
-// findUserByEmail leaves this test and cross-app equality green.
-//
-// The ordering rule is pinned where it can be, in each store's own
-// suite, by planting a duplicate older than the seeded user, which no
-// route can do:
-//
+// It cannot pin the created_at-then-id ordering openapi.yaml requires:
+// over HTTP a duplicate is always minted after the user it duplicates, so
+// the seeded row is earliest by both fields and a store with no ordering
+// passes too (confirmed: deleting the sort from apps/node's
+// findUserByEmail stays green here). That rule is pinned instead per
+// store, by planting a duplicate older than the seeded user:
 //   - apps/go/store/memory/memory_internal_test.go, TestDuplicateEmailPrefersTheOlderRow
 //   - apps/node/src/memory.test.ts, "resolves a duplicate email to the earliest user"
 //   - apps/rust/src/memory.rs, duplicate_email_resolves_to_the_earliest_user
 //
-// What is left here is still worth having. A port that resolved the
-// duplicate differently from the others, for example to the newest match,
-// fails this and fails equality at the lifecycle's login step.
+// Still worth having: it also catches a port resolving duplicates differently.
 func TestAppsAgreeWhichUserADuplicateEmailResolvesTo(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

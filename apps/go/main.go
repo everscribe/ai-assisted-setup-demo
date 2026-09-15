@@ -1,21 +1,14 @@
-// ai-assisted-setup-demo is a deliberately un-instrumented multi-tenant SaaS demo.
+// ai-assisted-setup-demo is a deliberately un-instrumented multi-tenant SaaS demo:
+// a clean target for Everscribe's auto-instrument feature to walk, propose
+// audit events for, and open a PR against (SDK + middleware + per-handler
+// event calls, plus the React audit-trail component in the SPA).
 //
-// The point of this repo is to be a clean target for Everscribe's
-// auto-instrument feature: clone it, run our hosted instrument flow
-// against it, watch the agent walk these handlers, propose audit events,
-// and open a PR that adds the SDK + middleware + per-handler event calls
-// (and drops the React audit-trail component into the SPA).
+// Domain: internal access portal. Organizations manage access to internal
+// resources; members request, admins approve/deny/revoke. Every mutating
+// handler is an audit-worthy security event.
 //
-// Domain: internal access portal. Organizations (tenants) manage who has
-// access to internal resources - databases, prod environments, customer
-// data, third-party SaaS. Members request access with a reason; admins
-// approve, deny, or revoke. Every mutating handler is an audit-worthy
-// security event.
-//
-// Auth model is intentionally minimal: the SPA POSTs an email to
-// /api/login to look up a seeded user, then attaches X-User-ID on every
-// request. Real apps would use sessions or JWTs - the auto-instrument
-// agent works with either shape.
+// Auth is intentionally minimal: the SPA POSTs an email to /api/login to
+// look up a seeded user, then attaches X-User-ID on every request.
 package main
 
 import (

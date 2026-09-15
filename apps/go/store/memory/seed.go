@@ -7,17 +7,16 @@ import (
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
 )
 
-// Seed populates the store with two organizations, four seeded users,
-// a handful of resources, access requests in every state, and comments.
+// Seed populates the store with two organizations, four seeded users, a
+// handful of resources, access requests in every state, and comments.
 // IDs are fixed so the frontend's quick-pick login is stable across
 // restarts.
 //
-// The cast is also the ordering fixture the four ports are checked
-// against: r_acme_pg carries three requests and req_acme_1 carries three
-// comments, in each case with one pair tied on created_at so the id
-// tiebreak has something to decide. Both groups are listed here in an
-// order that is wrong for the declared sort, so an implementation that
-// serves insertion order fails.
+// This is also the ordering fixture: r_acme_pg's three requests and
+// req_acme_1's three comments each have one pair tied on created_at, so
+// the id tiebreak has something to decide, and both groups are listed
+// here in an order wrong for the declared sort, so serving insertion
+// order fails.
 func (s *Store) Seed(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
