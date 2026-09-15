@@ -1,8 +1,9 @@
 # Contract log, Python store
 
 Questions `contract/openapi.yaml` and `contract/seed.json` could not answer while
-writing `app/models.py`, `app/store.py`, `app/seed.py` and `app/memory.py`, and
-what I decided instead. Written as the work happened.
+writing `app/models.py`, `app/store.py`, `app/seed.py`, `app/memory.py`,
+`app/handlers.py`, `app/router.py` and `app/main.py`, and what I decided instead.
+Written as the work happened.
 
 I did not open `apps/go/handlers/`, `apps/go/store/memory/`,
 `apps/node/src/handlers.ts`, `apps/node/src/memory.ts`, `apps/rust/src/handlers.rs`
@@ -67,3 +68,49 @@ no route exposes them.
 
 Decided: the same total order as everything else, `created_at` ascending then id
 ascending. Unobservable either way.
+
+## 6. The brief's HEAD fixture asserted a Content-Type the contract forbids
+
+The task brief hands the router tests over verbatim, and one line reads
+`assert r.headers["content-type"] == "application/json"`. The contract's last
+paragraph before `servers:` says every response that has a body is
+`application/json; charset=utf-8`, and the HEAD paragraph says a HEAD response
+carries the same header fields the equivalent GET would, Content-Type included.
+The two cannot both hold.
+
+Decided: the contract wins. The app emits `application/json; charset=utf-8`
+everywhere, via a `JSONResponse` subclass, because Starlette only appends a
+charset to `text/*` media types and its bare `JSONResponse` would have shipped
+`application/json`. The fixture now asserts the charset-qualified value. Nothing
+in a single-app conformance run checks this: `TestAppsAgreeWithEachOther`, which
+compares Content-Type across apps, skips below two apps, so the assertion in
+`tests/test_router.py` is the only thing holding it.
+
+## 7. What answers a path that is not under /api?
+
+The percent-encoding rule pins only the status for `GET /%61pi/me`, saying the
+body "falls outside the API entirely, onto whatever serves the SPA, whose 404
+body is not the contract's to specify". The empty-segment rule is scoped the
+same way, to paths "under /api". So nothing says what a request above the mount
+should look like, and `web/dist` does not exist until task 4.
+
+Decided: anything not byte-exactly under `/api` goes to `StaticFiles`, and while
+`web/dist` is missing it answers `{"error": "not found"}` with a 404 rather than
+constructing a placeholder dist. That keeps the status the contract pins, keeps
+one body shape across the whole server, and leaks nothing: `/%61pi/me`,
+`/API/me`, `//api/me` and `/nope` are all the same 404.
+
+## 8. Which message accompanies a 400 that is not one of the six quoted ones?
+
+The contract names six stable messages (`email required`, `name required`,
+`name and email required`, `reason required`, `body required`,
+`role must be admin or member`) and says the rest of the 400 text is not
+normative, only that no check may match a message beginning `invalid body:`.
+That leaves an unparseable body, a non-object body, and a field of the wrong
+type without a message.
+
+Decided: `{"error": "invalid body"}` for all three, with one exception. A
+wrong-typed `role` on `PUT /api/members/{id}/role` answers
+`role must be admin or member`, because that route's message already covers
+every value that is not exactly one of the two strings and splitting it by
+JSON type would be a distinction the contract never draws.
