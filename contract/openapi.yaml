@@ -209,6 +209,37 @@ info:
     Turning routing raw by turning decoding off everywhere trades one
     divergence for another.
 
+    A path containing a dot segment is not resolved before routing. A
+    "." or ".." segment under /api is {"error": "not found"} with a 404
+    from the API's own JSON handler, so GET /api/./me, GET
+    /api/resources/../me and GET /api/me/. each answer exactly as GET
+    /api/no-such-route does, never Ada's record and never a redirect to
+    /api/me. This is the fourth member of the set the trailing slash,
+    the empty segment, path case sensitivity and percent-encoding
+    already belong to: a path either matches a registered route byte for
+    byte or it does not, and a redirect to the resolved path is an
+    existence oracle, since an unregistered path has nothing to redirect
+    to. Reject it before routing sees it, and check the decoded spelling
+    as well as the raw one, or a %2e smuggles a dot segment past the
+    guard into the framework's own resolution. Node, Rust and Python
+    inherited the 404; Go answered 301 with an HTML body from net/http's
+    ServeMux, which cleans the path, the same way it does for an empty
+    segment. Scoped to paths under /api, as the empty-segment rule is:
+    above the mount the request falls onto whatever serves the SPA, and
+    only the 404 status is pinned there, for the reason the
+    percent-encoding rule gives.
+
+    JSON escaping inside a string value is not normative. Go's
+    encoding/json escapes the four characters < > & and U+2028 into
+    their six-character backslash-u forms by default, where Node, Rust
+    and Python emit them raw. Both spellings decode to the same string,
+    so this is a serializer detail in the same class as object key
+    order, not something a client can observe once it has parsed the
+    body. Conformance comparisons are made on parsed values, never on
+    response bytes, and no check may require either spelling. What is
+    pinned is that the value survives: a field written with any of those
+    four characters in it reads back with them intact, on every port.
+
     Every response that has a body, success or error, is
     application/json; charset=utf-8. This includes GET /api/health and
     every 4xx. The two responses that have no body, the 204 from POST

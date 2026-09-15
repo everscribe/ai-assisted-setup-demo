@@ -67,22 +67,24 @@ func main() {
 // existence oracle the router closes for trailing slashes, on an
 // otherwise all-JSON API.
 //
-// The empty-segment guard wraps the mux rather than living inside it:
-// ServeMux cleans the path itself, so /api//me never reaches a handler,
-// it 301s to /api/me. Same leak, one level up.
+// The path guard wraps the mux rather than living inside it: ServeMux
+// cleans the path itself, so neither /api//me nor /api/./me reaches a
+// handler, both 301 to /api/me. Same leak, one level up.
 func newRootMux(api, static http.Handler) http.Handler {
 	root := http.NewServeMux()
 	root.Handle("/api", api)
 	root.Handle("/api/", api)
 	root.Handle("/", static)
-	return rejectEmptySegments(root)
+	return rejectUncleanPaths(root)
 }
 
-// rejectEmptySegments answers the API's own JSON 404 for any path with
-// an empty segment, before routing sees it.
-func rejectEmptySegments(next http.Handler) http.Handler {
+// rejectUncleanPaths answers the API's own JSON 404 for any path
+// ServeMux would clean and redirect: an empty segment, or a "." or ".."
+// segment. Both spellings are checked, raw and decoded, so a %2e cannot
+// smuggle a dot segment past the guard into the mux's redirect.
+func rejectUncleanPaths(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.URL.EscapedPath(), "//") {
+		if unclean(r.URL.EscapedPath()) || unclean(r.URL.Path) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":"not found"}`))
@@ -90,6 +92,21 @@ func rejectEmptySegments(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// unclean reports whether a path carries an empty, "." or ".." segment.
+// A single trailing slash is the trailing-slash rule, not an empty
+// segment, so it is left alone.
+func unclean(p string) bool {
+	if strings.Contains(p, "//") {
+		return true
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func newStaticHandler() (http.Handler, error) {

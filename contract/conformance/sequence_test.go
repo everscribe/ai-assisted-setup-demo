@@ -1,6 +1,7 @@
 package conformance
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -72,11 +73,23 @@ func Run(t *testing.T, c *Client) []*Response {
 	requirePristine(t, c)
 	steps := Lifecycle()
 	out := make([]*Response, 0, len(steps))
-	for _, s := range steps {
-		resp := validated(t, c, s.Method, s.Path, s.Actor, s.Body)
-		out = append(out, resp)
+	for i, s := range steps {
+		out = append(out, validatedStep(t, c, i, s))
 	}
 	return out
+}
+
+// validatedStep is validated with the step's index and name in the
+// failure message. A schema violation inside the lifecycle otherwise
+// reports only the app and the path, which leaves the reader to count
+// the script to find out which rule broke.
+func validatedStep(t *testing.T, c *Client, i int, s Step) *Response {
+	t.Helper()
+	resp, err := c.Do(context.Background(), s.Method, s.Path, s.Actor, s.Body)
+	require.NoError(t, err, "%s: step %d (%s)", c.App.Name, i, s.Name)
+	require.NoError(t, sharedSpec(t).ValidateResponse(context.Background(), s.Method, s.Path, resp),
+		"%s: step %d (%s) schema violation", c.App.Name, i, s.Name)
+	return resp
 }
 
 func TestLifecycleRunsCleanAgainstEveryApp(t *testing.T) {

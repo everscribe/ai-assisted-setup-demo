@@ -21,8 +21,17 @@ type Client struct {
 	http *http.Client
 }
 
+// NewClient returns a client that never follows a redirect. No route in
+// this contract redirects, so a 3xx is always a violation, and following
+// one hides it: Go's ServeMux answered GET /api/./me with a 301 to
+// /api/me, and a following client replayed X-User-ID against the target
+// and reported a 200 carrying Ada's record, which is the existence
+// oracle the path rules close, laundered into a success.
 func NewClient(a App) *Client {
-	return &Client{App: a, http: &http.Client{Timeout: 10 * time.Second}}
+	return &Client{App: a, http: &http.Client{
+		Timeout:       10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}}
 }
 
 // Do sends one request. An empty actor sends no X-User-ID header, which is

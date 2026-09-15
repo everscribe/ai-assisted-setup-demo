@@ -204,6 +204,60 @@ func TestPercentEncodedPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 	}
 }
 
+// A path with a dot segment must be as anonymous as an unknown path.
+// Same leak as the two probes above: a port that resolves the segment
+// before routing answers 301 to the cleaned path, and a redirect tells a
+// caller the cleaned path exists, because an unregistered path has
+// nothing to redirect to. Go answered exactly that, from net/http's
+// ServeMux, while Node, Rust and Python answered the JSON 404.
+func TestDotSegmentPathIsTheSame404AsAnUnknownPath(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			unknown := validated(t, c, http.MethodGet, "/api/no-such-route", "u_ada", "")
+			require.Equal(t, http.StatusNotFound, unknown.Status)
+
+			// The last two are the percent-encoded spellings of the
+			// first: a guard that only reads the raw path lets a %2e
+			// through to the framework's own resolution.
+			for _, pair := range [][2]string{
+				{"/api/./me", "/api/me"},
+				{"/api/resources/../me", "/api/me"},
+				{"/api/me/.", "/api/me"},
+				{"/api/%2e/me", "/api/me"},
+				{"/api/resources/%2e%2e/me", "/api/me"},
+			} {
+				dotted, plain := pair[0], pair[1]
+
+				// Positive control: the resolved spelling must work, or
+				// a 404 on the dotted one proves nothing.
+				ok := validated(t, c, http.MethodGet, plain, "u_ada", "")
+				require.Equal(t, http.StatusOK, ok.Status, "positive control for %s", dotted)
+
+				got := validated(t, c, http.MethodGet, dotted, "u_ada", "")
+				require.Equal(t, unknown.Status, got.Status, dotted)
+				require.Equal(t, string(unknown.Body), string(got.Body), dotted)
+				require.Empty(t, got.Header.Get("Location"), "%s must not redirect", dotted)
+
+				anon := validated(t, c, http.MethodGet, dotted, "", "")
+				require.Equal(t, http.StatusNotFound, anon.Status,
+					"%s with no actor must not reveal that the path exists", dotted)
+			}
+
+			// The mount is not resolved either. Only the status is
+			// asserted, for the reason the two tests above give: /./api/me
+			// falls outside the API entirely, onto whatever serves the
+			// SPA, whose 404 body is not the contract's to specify.
+			outside, err := c.Do(t.Context(), http.MethodGet, "/./api/me", "u_ada", "")
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNotFound, outside.Status,
+				"/./api/me must not reach the API")
+		})
+	}
+}
+
 // lowercasePath lowercases a path for the positive controls above.
 func lowercasePath(p string) string {
 	out := []byte(p)

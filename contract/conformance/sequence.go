@@ -34,6 +34,17 @@ func Lifecycle() []Step {
 		{"deny already denied", "POST", "/api/requests/req_acme_3/deny", "u_ada", ""},
 
 		{"register resource", "POST", "/api/resources", "u_ada", `{"name":"vault-prod","description":"secrets","sensitivity":"restricted"}`},
+
+		// JSON escaping inside a string is not normative: Go escapes <, >,
+		// & and U+2028 where the other three emit them raw. What the
+		// contract does pin is that the value survives, so this step
+		// registers a resource carrying all four and the comparison below
+		// reads it back through "resources after changes". Both spellings
+		// parse to the same string, which is why comparing parsed bodies
+		// rather than response bytes is the whole point of Normalizer.
+		{"register resource with escapable characters", "POST", "/api/resources", "u_ada",
+			"{\"name\":\"vault<&>prod\",\"description\":\"tags <b> & a line\u2028separator\",\"sensitivity\":\"restricted\"}"},
+
 		{"invite member", "POST", "/api/members", "u_ada", `{"name":"Barbara Liskov","email":"barbara@acme.test","role":"member"}`},
 		{"members after invite", "GET", "/api/members", "u_ada", ""},
 		{"decommission", "POST", "/api/resources/r_acme_s3/decommission", "u_ada", ""},
@@ -94,6 +105,15 @@ func Lifecycle() []Step {
 		// re-runnable and no list comparison above them moves.
 		{"percent-encoded path", "GET", "/api/%6de", "u_ada", ""},
 		{"percent-encoded id", "GET", "/api/resources/r%5Facme_pg/requests", "u_ada", ""},
+
+		// A dot segment is not resolved before routing, so these are
+		// unregistered paths and answer as /api/no-such-route does. Go
+		// answered 301 with an HTML body from ServeMux, which cleans the
+		// path, where Node, Rust and Python answered the JSON 404. Same
+		// class as the three steps above; both are reads, so the script
+		// stays re-runnable.
+		{"dot segment", "GET", "/api/./me", "u_ada", ""},
+		{"dot-dot segment", "GET", "/api/resources/../me", "u_ada", ""},
 
 		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
 		{"method mismatch", "GET", "/api/login", "u_ada", ""},

@@ -113,3 +113,32 @@ func TestParseExpectedApps(t *testing.T) {
 		require.Equal(t, tc.want, got, "%q", tc.raw)
 	}
 }
+
+// A redirect must reach the caller as a redirect. Every path rule in the
+// contract (trailing slash, empty segment, case, percent-encoding, dot
+// segment) exists to stop a 3xx from telling a prober that the cleaned
+// path exists, so a client that follows one turns the very leak those
+// rules close into a 200 and reports conformance.
+func TestClientDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+
+	var targetHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/me" {
+			targetHits++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"u_ada"}`))
+			return
+		}
+		http.Redirect(w, r, "/api/me", http.StatusMovedPermanently)
+	}))
+	defer srv.Close()
+
+	c := NewClient(App{Name: "t", BaseURL: srv.URL})
+	resp, err := c.Do(context.Background(), http.MethodGet, "/api/./me", "u_ada", "")
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusMovedPermanently, resp.Status)
+	require.Equal(t, "/api/me", resp.Header.Get("Location"))
+	require.Zero(t, targetHits, "the redirect target must never be requested")
+}
