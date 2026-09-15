@@ -64,13 +64,22 @@ async def test_unauthenticated_is_json_401(client):
 
 
 @pytest.mark.anyio
-async def test_head_health_is_405_not_an_empty_200(client):
-    r = await client.request("HEAD", "/api/health")
-    assert r.status_code == 405
+@pytest.mark.parametrize("path", ["/api/health", "/api/me", "/api/members", "/api/resources"])
+async def test_head_is_not_routed_to_get_on_any_get_route(path, client):
+    # No code in router.py strips HEAD. FastAPI's add_api_route registers
+    # exactly the methods it is given, where Starlette's own Route adds HEAD
+    # wherever GET appears, so there is nothing to strip. This pins the
+    # framework behaviour that is relied on instead of a guard: registering
+    # these routes the Starlette way, or a FastAPI that started adding HEAD,
+    # turns each of these into an empty 200 and fails here.
+    r = await client.request("HEAD", path, headers=ADMIN)
+    assert r.status_code == 405, path
     # openapi.yaml: a HEAD response carries the same headers the equivalent GET
     # would, Content-Type included, and that type is always charset-qualified.
-    assert r.headers["content-type"] == JSON_CT
-    assert "HEAD" not in r.headers["allow"].upper().split(", ")
+    assert r.headers["content-type"] == JSON_CT, path
+    assert "HEAD" not in r.headers["allow"].upper().split(", "), path
+    # RFC 9110 4.3.2: no content in a response to HEAD.
+    assert r.content == b"", path
 
 
 @pytest.mark.anyio
@@ -172,10 +181,45 @@ async def test_case_variant_route_path_does_not_reach_the_api(client):
 
 @pytest.mark.anyio
 async def test_allow_lists_every_method_registered_for_the_path(client):
-    r = await client.request("DELETE", "/api/members", headers={"X-User-ID": "u_ada"})
+    # Both halves are this app's own work, not the framework's: without the
+    # StarletteHTTPException handler the body is {"detail": "Method Not
+    # Allowed"}, and without _allowed_methods the Allow header carries only the
+    # first matching route's methods, which is GET alone on this path.
+    r = await client.request("DELETE", "/api/members", headers=ADMIN)
     assert r.status_code == 405
     assert r.json() == {"error": "method not allowed"}
+    assert r.headers["content-type"] == JSON_CT
     assert sorted(r.headers["allow"].split(", ")) == ["GET", "POST"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("name,method,path,admin_only", BODY_ROUTES,
+                         ids=[row[0] for row in BODY_ROUTES])
+async def test_a_malformed_body_is_the_apps_own_400_never_fastapis_422(
+    client, name, method, path, admin_only
+):
+    # Nothing in router.py handles RequestValidationError. No route binds a
+    # request model, so FastAPI never raises one, and a malformed body reaches
+    # the handler and gets the handler's own 400. This pins that framework
+    # behaviour rather than keeping an exception handler for a case that cannot
+    # occur: bind a Pydantic model or a dict-annotated parameter on any route
+    # below and it answers 422 with a detail list, failing here.
+    r = await client.request(method, path, headers=ADMIN, content=b"{")
+    assert r.status_code == 400, name
+    assert r.headers["content-type"] == JSON_CT, name
+    body = r.json()
+    assert "detail" not in body, name
+    assert list(body) == ["error"], name
+
+
+@pytest.mark.anyio
+async def test_login_is_the_apps_own_400_too(client):
+    # login is the one body route with no actor check ahead of the parse, so it
+    # is the shortest path from a malformed body to a 422 if a model is ever
+    # bound. BODY_ROUTES cannot carry it: it takes no X-User-ID.
+    r = await client.post("/api/login", content=b"{")
+    assert r.status_code == 400
+    assert list(r.json()) == ["error"]
 
 
 @pytest.mark.anyio

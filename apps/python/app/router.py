@@ -5,10 +5,18 @@ turns off the framework defaults that would break it:
 
 1. No pydantic body models, so the role check runs before body parsing.
 2. Starlette's {"detail": "Not Found"} becomes the contract's Error schema.
-3. Same for the 405 body; its Allow header is kept and HEAD dropped from it.
-4. HEAD is not routed to GET, so HEAD /api/health is a 405.
-5. redirect_slashes is off, so /api/me/ is a 404 rather than a 307.
-6. A RequestValidationError, if one ever escapes, renders a 400 Error.
+3. Same for the 405 body, whose Allow header lists every method registered for
+   the path rather than only the first matching route's.
+4. redirect_slashes is off, so /api/me/ is a 404 rather than a 307.
+
+Two more contract rules come from framework behaviour this file relies on
+rather than overrides, so tests/test_router.py pins each instead:
+
+5. HEAD is not routed to GET, because FastAPI's add_api_route registers exactly
+   the methods it is given. Starlette's own Route adds HEAD wherever GET
+   appears; APIRoute does not.
+6. A malformed body is the handler's own 400 rather than FastAPI's 422, because
+   no route binds a request model, so RequestValidationError never fires.
 
 Routing matches the raw, undecoded path: /api/%6de is a 404, not Ada's record.
 Captured path parameters are still decoded, in handlers._path_id.
@@ -18,7 +26,6 @@ from http import HTTPStatus
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 from starlette.responses import Response
@@ -106,13 +113,16 @@ class RawPathMiddleware:
 def _allowed_methods(app: FastAPI, path: str) -> list[str]:
     """Every method registered for this path, across routes. Starlette only
     remembers the first partial match, which would under-report Allow on a path
-    that carries two methods. HEAD is registered on no route."""
+    that carries two methods.
+
+    Nothing filters HEAD out: add_api_route registers no HEAD, so there is none
+    to filter. tests/test_router.py pins that.
+    """
     methods: set[str] = set()
     for route in app.routes:
         regex = getattr(route, "path_regex", None)
         if regex is not None and regex.match(path):
             methods |= set(getattr(route, "methods", None) or [])
-    methods.discard("HEAD")
     return sorted(methods)
 
 
@@ -122,12 +132,6 @@ def build_app(store: Store) -> FastAPI:
 
     for path, methods, handler in ROUTES:
         app.add_api_route(path, _bind(handler, store), methods=methods)
-
-    for route in app.routes:
-        # Starlette adds HEAD wherever GET is registered.
-        methods = getattr(route, "methods", None)
-        if methods and "HEAD" in methods:
-            route.methods = {m for m in methods if m != "HEAD"}
 
     # check_dir=False lets this construct before task 4 builds web/dist;
     # StaticFiles still raises on the first request, so the directory is
@@ -158,13 +162,7 @@ def build_app(store: Store) -> FastAPI:
         message = _MESSAGES.get(exc.status_code) or HTTPStatus(exc.status_code).phrase.lower()
         return fail(exc.status_code, message)
 
-    async def _validation_error(request: Request, exc: RequestValidationError) -> Response:
-        # No route binds a model, so this should be unreachable. A 422 with a
-        # detail list would not be.
-        return fail(400, _MESSAGES[400])
-
     app.add_exception_handler(StarletteHTTPException, _http_exception)
-    app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_middleware(RawPathMiddleware)
     return app
 
