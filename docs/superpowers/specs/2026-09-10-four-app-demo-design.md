@@ -133,7 +133,7 @@ ai-assisted-setup-demo/
               web/, Dockerfile, README.md
     node/     package.json, src/, web/, Dockerfile, README.md
     rust/     Cargo.toml, src/, web/, Dockerfile, README.md
-    python/   pyproject.toml, app/, web/, Dockerfile, README.md
+    python/   requirements.txt, app/, web/, Dockerfile, README.md
   contract/
     openapi.yaml
     seed.json
