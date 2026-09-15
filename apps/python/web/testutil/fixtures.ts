@@ -99,24 +99,30 @@ export const globexPagerduty: Resource = {
 export const globexResources: Resource[] = [globexK8s, globexPagerduty]
 
 // Two pending requests on the same resource with distinct created_at,
-// already in the server's newest-first order, so the view is only
-// asked to preserve order, never to compute it.
+// already in the server's newest-first order, so the view is only asked
+// to preserve order, never to compute it.
+//
+// The ids and the reasons both sort the opposite way on purpose, the way
+// the resource fixtures above do: req_pg_1 sorts before req_pg_2 and
+// "Audit..." sorts before "Zero...", while the order the view must show
+// is reqNew then reqOld. So a view that re-sorted by id or by reason
+// text, and not only one that reversed the list, is caught.
 export const reqNew: AccessRequest = {
-  id: 'req_new',
+  id: 'req_pg_2',
   resource_id: 'r_acme_pg',
   organization_id: 'org_acme',
   requested_by: 'u_linus',
-  reason: 'Newest request',
+  reason: 'Zero-downtime failover drill',
   status: 'pending',
   created_at: '2026-03-14T12:00:00Z',
 }
 
 export const reqOld: AccessRequest = {
-  id: 'req_old',
+  id: 'req_pg_1',
   resource_id: 'r_acme_pg',
   organization_id: 'org_acme',
   requested_by: 'u_linus',
-  reason: 'Oldest request',
+  reason: 'Audit of the payments schema',
   status: 'pending',
   created_at: '2026-03-14T09:00:00Z',
 }

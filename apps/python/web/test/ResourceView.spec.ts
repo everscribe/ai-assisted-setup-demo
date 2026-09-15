@@ -26,7 +26,10 @@ beforeEach(() => {
 
 describe('ResourceView', () => {
   it('renders access requests newest first', async () => {
-    vi.mocked(api.listResourceRequests).mockResolvedValue([reqNew, reqOld]) // already server-sorted, newest first
+    // Already server-sorted, newest first. The fixture ids and reasons
+    // both sort the other way, so this catches a re-sort by id or by
+    // title as well as a reversal.
+    vi.mocked(api.listResourceRequests).mockResolvedValue([reqNew, reqOld])
     vi.mocked(api.listMembers).mockResolvedValue([linus])
 
     const wrapper = mount(ResourceView, { props: { resource: acmePg, me: ada } })
@@ -35,7 +38,7 @@ describe('ResourceView', () => {
     const columns = wrapper.findAll('.column')
     const pendingColumn = columns.find((c) => c.find('h3').text().startsWith('Pending'))!
     const titles = pendingColumn.findAll('.task-title').map((t) => t.text())
-    expect(titles).toEqual(['Newest request', 'Oldest request'])
+    expect(titles).toEqual([reqNew.reason, reqOld.reason])
   })
 
   it('approving a pending request updates that card in place, without a full reload', async () => {
