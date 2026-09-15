@@ -154,8 +154,10 @@ async def test_percent_encoded_path_parameter_is_decoded(client):
 
 @pytest.mark.anyio
 async def test_percent_encoded_mount_does_not_reach_the_api(client):
-    # Only the status is pinned here: the body belongs to whatever serves the
-    # SPA. What matters is that it is not Ada's record.
+    # The contract pins only that this must not reach the API and must not
+    # serve a user record; the static layer above the mount is not specified.
+    # The 404 is this app's own choice, recorded in CONTRACT-LOG.md section 7,
+    # and pinned here rather than in the harness for that reason.
     r = await client.get("/%61pi/me", headers={"X-User-ID": "u_ada"})
     assert r.status_code == 404
     assert "u_ada" not in r.text

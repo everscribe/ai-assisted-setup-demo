@@ -100,6 +100,12 @@ constructing a placeholder dist. That keeps the status the contract pins, keeps
 one body shape across the whole server, and leaks nothing: `/%61pi/me`,
 `/API/me`, `//api/me` and `/nope` are all the same 404.
 
+Update: the contract no longer pins a status above the mount at all. Measuring
+the four apps showed they disagree there (`GET /%2e` is 301, 301, 307 and 404),
+so the amendment scopes the path rules to paths under `/api` and keeps only the
+security half above it. The 404 this app answers is now its own choice rather
+than a contract requirement, and `tests/test_router.py` is what holds it.
+
 ## 8. Which message accompanies a 400 that is not one of the six quoted ones?
 
 The contract names six stable messages (`email required`, `name required`,

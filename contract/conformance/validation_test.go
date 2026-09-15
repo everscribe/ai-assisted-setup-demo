@@ -135,13 +135,8 @@ func TestMixedCasePathIsTheSame404AsAnUnknownPath(t *testing.T) {
 					"%s with no actor must not reveal that the path exists", path)
 			}
 
-			// The mount is case sensitive too. Only the status is
-			// asserted: /API/me falls outside the API entirely, onto
-			// whatever serves the SPA, whose 404 body is not JSON and is
-			// not the contract's to specify.
-			outside, err := c.Do(t.Context(), http.MethodGet, "/API/me", "u_ada", "")
-			require.NoError(t, err)
-			require.Equal(t, http.StatusNotFound, outside.Status)
+			// A mixed-case spelling of the mount must not reach the API.
+			requireDidNotReachTheAPI(t, c, "/API/me")
 		})
 	}
 }
@@ -208,16 +203,10 @@ func TestPercentEncodedPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 					"%s must reach the route, not a path guard", path)
 			}
 
-			// The mount is raw too. Only the status is asserted, for the
-			// reason the mixed-case test gives: /%61pi/me falls outside
-			// the API entirely, onto whatever serves the SPA, whose 404
-			// body is not the contract's to specify. Starlette routes on
-			// the ASGI-decoded scope["path"], so a port can serve Ada's
-			// record here without noticing.
-			outside, err := c.Do(t.Context(), http.MethodGet, "/%61pi/me", "u_ada", "")
-			require.NoError(t, err)
-			require.Equal(t, http.StatusNotFound, outside.Status,
-				"/%61pi/me must not reach the API")
+			// The mount is raw too. Starlette routes on the ASGI-decoded
+			// scope["path"], so a port can serve Ada's record here
+			// without noticing.
+			requireDidNotReachTheAPI(t, c, "/%61pi/me")
 		})
 	}
 }
@@ -264,14 +253,8 @@ func TestDotSegmentPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 					"%s with no actor must not reveal that the path exists", dotted)
 			}
 
-			// The mount is not resolved either. Only the status is
-			// asserted, for the reason the two tests above give: /./api/me
-			// falls outside the API entirely, onto whatever serves the
-			// SPA, whose 404 body is not the contract's to specify.
-			outside, err := c.Do(t.Context(), http.MethodGet, "/./api/me", "u_ada", "")
-			require.NoError(t, err)
-			require.Equal(t, http.StatusNotFound, outside.Status,
-				"/./api/me must not reach the API")
+			// The mount is not resolved either.
+			requireDidNotReachTheAPI(t, c, "/./api/me")
 		})
 	}
 }
@@ -380,6 +363,32 @@ func TestEscapableCharactersSurviveARoundTrip(t *testing.T) {
 			require.True(t, found, "the resource just registered is missing from the list")
 		})
 	}
+}
+
+// requireDidNotReachTheAPI asserts the one property the contract pins
+// above the /api mount: the request never became an API answer.
+//
+// The status is deliberately not asserted. The static layer above the
+// mount is not specified by the contract, and the four apps genuinely
+// disagree there: GET /%2e is 301 on Go and Node, 307 on Rust and 404 on
+// Python, and GET /index.html is 301 on Go and 200 on the other three.
+// Pinning a status here would be pinning four static file servers to
+// each other for no product reason. What must hold on all four is the
+// security half: no user record comes back.
+func requireDidNotReachTheAPI(t *testing.T, c *Client, path string) {
+	t.Helper()
+
+	// Positive control: the same actor on the real path does get a
+	// record, so the assertions below are about the path.
+	inside := validated(t, c, http.MethodGet, "/api/me", "u_ada", "")
+	require.Equal(t, http.StatusOK, inside.Status, "positive control for %s", path)
+
+	outside, err := c.Do(t.Context(), http.MethodGet, path, "u_ada", "")
+	require.NoError(t, err)
+	require.NotEqual(t, string(inside.Body), string(outside.Body),
+		"%s must not answer as the API does", path)
+	require.NotContains(t, string(outside.Body), "u_ada",
+		"%s must not serve a user record", path)
 }
 
 // lowercasePath lowercases a path for the positive controls above.

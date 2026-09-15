@@ -155,11 +155,35 @@ info:
     /api/me/ is a 404, not a redirect to /api/me. A redirect would let a
     caller distinguish "exists" from "does not exist" by probing paths,
     which is the same leak the cross-tenant 404 rule closes. The rule
-    applies one level up too, at whatever mounts the API under /api: a
-    bare GET /api must reach the API's own JSON 404 rather than
-    redirecting to /api/. The Go app registers both /api and /api/ on
-    its outer mux for exactly this reason, because registering only the
-    subtree left the mux answering 301 with an HTML body.
+    covers the mount path itself, which is the API's own surface rather
+    than the static layer above it: a bare GET /api must reach the API's
+    own JSON 404 rather than redirecting to /api/. The Go app registers
+    both /api and /api/ on its outer mux for exactly this reason,
+    because registering only the subtree left the mux answering 301 with
+    an HTML body.
+
+    Every path rule in this family - the trailing slash above, and the
+    empty segment, path case sensitivity, percent-encoding and dot
+    segments below - is scoped to paths under /api. What sits above the
+    mount is whatever serves the SPA, and this contract does not specify
+    it. Four frameworks serve static files four different ways and
+    answer the same request four different ways: GET /%2e is 301 on Go
+    and Node, 307 on Rust and 404 on Python; GET /. is 404, 301, 307 and
+    307; GET /assets is 301, 301, 307 and 404; GET /index.html is 301 on
+    Go and 200 on the other three. Nothing in this demo reaches those
+    edges, so the contract says nothing about them rather than pinning a
+    status it would then have to force four static file servers to agree
+    on.
+
+    One property above the mount is pinned, because it is the security
+    half of the same rules and it holds on all four today: a path whose
+    prefix is not /api byte for byte must not reach the API. GET
+    /API/me, GET /%61pi/me and GET /./api/me each fall outside the API
+    and must never answer with a user record, whatever the static layer
+    chooses to do with them. That non-disclosure is what the rules under
+    /api exist for. The status those three carry is not pinned; all four
+    apps answer 404 today, and a port that answered a redirect instead
+    would still be conformant.
 
     A path containing an empty segment is a 404 from the API's own JSON
     handler, for the same reason and in the same class. GET /api//me is
@@ -174,8 +198,9 @@ info:
     trailing-slash rule above, and it has the same 404 answer anyway.
 
     Paths are case sensitive, for the same reason. GET /api/ME is a 404
-    identical to GET /api/no-such-route, never Ada's record, and the
-    rule applies at the mount too: GET /API/me does not reach the API.
+    identical to GET /api/no-such-route, never Ada's record. Above the
+    mount only the security half holds, as the paragraph above says: GET
+    /API/me must not reach the API, and its status is not pinned.
     Without this, a mixed-case probe is an existence oracle - a
     registered path answers 401 with no actor while an unregistered one
     answers 404 - which is exactly the leak the trailing-slash rule
@@ -191,13 +216,13 @@ info:
     not. Frameworks disagree by default, so a port must check rather
     than assume. Express and axum match the raw path; Gin reads
     URL.Path, already decoded, unless UseRawPath is set, and served
-    Ada's record here until it was. The rule applies at the mount too,
-    as case sensitivity does: GET /%61pi/me is a 404 like any
-    unregistered path, never Ada's record. Only the status is pinned
-    there, because that path falls outside the API entirely, onto
-    whatever serves the SPA, whose 404 body is not the contract's to
-    specify. Starlette routes on the ASGI-decoded scope["path"], so a
-    port built on it must check this rather than inherit it.
+    Ada's record here until it was. Above the mount only the security
+    half holds, as it does for case sensitivity: GET /%61pi/me must not
+    reach the API and must never answer with Ada's record. Neither its
+    status nor its body is pinned, because that path falls outside the
+    API entirely, onto whatever serves the SPA. Starlette routes on the
+    ASGI-decoded scope["path"], so a port built on it must check this
+    rather than inherit it.
 
     Raw routing is not raw path parameters. An octet inside a captured
     id is decoded before the store sees it, so GET
@@ -228,10 +253,9 @@ info:
     own 401 belongs. Node, Rust and Python inherited the 404; Go
     answered 301 with an HTML body from net/http's ServeMux, which
     cleans the path, the same way it does for an empty segment. Scoped
-    to paths under /api, as the empty-segment rule is: above the mount
-    the request falls onto whatever serves the SPA, and only the 404
-    status is pinned there, for the reason the percent-encoding rule
-    gives.
+    to paths under /api, as the whole family is: above the mount GET
+    /./api/me must not reach the API and must never answer with Ada's
+    record, and nothing else about it is pinned.
 
     JSON escaping inside a string value is not normative. Go's
     encoding/json escapes the four characters < > & and U+2028 into

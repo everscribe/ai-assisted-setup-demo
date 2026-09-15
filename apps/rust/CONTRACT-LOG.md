@@ -287,6 +287,11 @@ closed at the mount too. Confidence: medium. A port that let its static
 server answer its own empty 404 there is not contradicted by anything
 written down, and the two would differ on the wire.
 
+Update: confirmed, and the contract has been amended to say so. The four apps
+were measured above the mount and disagree (`GET /%2e` is 301, 301, 307 and
+404), so the path rules are now scoped to paths under `/api` and only the
+security half, that such a path must not reach the API, is pinned above it.
+
 ### 17. May a conformance run mutate the seeded fixture?
 
 Not a hole in the app's behaviour but a hole in what the contract says
