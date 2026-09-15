@@ -1,0 +1,7 @@
+-r requirements.txt
+
+pytest==9.1.1
+httpx==0.28.1
+# anyio ships pytest's async plugin, which the router tests need. httpx pulls
+# it in transitively; declaring it keeps a clean install working if that changes.
+anyio==4.15.1

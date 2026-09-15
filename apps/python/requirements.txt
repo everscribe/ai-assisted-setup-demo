@@ -1,0 +1,4 @@
+# Runtime dependencies. Versions are what pip resolved into .venv; see
+# `.venv/bin/pip freeze`.
+fastapi==0.141.1
+uvicorn==0.53.0
