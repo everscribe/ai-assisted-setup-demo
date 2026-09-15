@@ -80,11 +80,16 @@ func newRootMux(api, static http.Handler) http.Handler {
 
 // rejectUncleanPaths answers the API's own JSON 404 for any path
 // ServeMux would clean and redirect: an empty segment, or a "." or ".."
-// segment. Both spellings are checked, raw and decoded, so a %2e cannot
-// smuggle a dot segment past the guard into the mux's redirect.
+// segment.
+//
+// The raw spelling only. ServeMux matches on escaped segments, so a %2e
+// is already an ordinary octet to it and needs no guard, while checking
+// the decoded path here would reject a percent-encoded octet inside a
+// captured id and break the rule three lines under the dot-segment one
+// in openapi.yaml: raw routing is not raw path parameters.
 func rejectUncleanPaths(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if unclean(r.URL.EscapedPath()) || unclean(r.URL.Path) {
+		if unclean(r.URL.EscapedPath()) {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":"not found"}`))

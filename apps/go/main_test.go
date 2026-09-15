@@ -88,8 +88,11 @@ func TestDotSegmentIsJSON404NotRedirect(t *testing.T) {
 	})
 	root := newRootMux(handlers.Router(s), static)
 
-	// The last two are the percent-encoded spellings: a %2e must not
-	// smuggle a dot segment past the guard into the mux's redirect.
+	// The last two are the percent-encoded spellings. They never reach the
+	// guard: ServeMux matches on escaped segments, so a %2e is an ordinary
+	// octet to it and the router answers the same 404 for an unregistered
+	// path. Kept here because the answer is what is pinned, not who gives
+	// it.
 	for _, path := range []string{
 		"/api/./me", "/api/resources/../me", "/api/me/.", "/api/../api/me",
 		"/api/%2e/me", "/api/resources/%2e%2e/me",
@@ -116,4 +119,19 @@ func TestDotSegmentIsJSON404NotRedirect(t *testing.T) {
 	w = httptest.NewRecorder()
 	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/assets/index-a1b2c3.js", nil))
 	require.Equal(t, http.StatusOK, w.Code, "a dot inside a segment is not a dot segment")
+
+	// The guard must not read the decoded path. An octet inside a captured
+	// id decodes to a dot segment or a slash, and a decoded check turns
+	// these into a 404 where the other three apps answer 401, which is the
+	// leak the dot-segment rule closes, running backwards.
+	for _, path := range []string{
+		"/api/resources/%2e/requests",
+		"/api/resources/%2e%2e/requests",
+		"/api/resources/%2F/requests",
+	} {
+		w := httptest.NewRecorder()
+		root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusUnauthorized, w.Code,
+			"GET %s must reach the route, not the path guard", path)
+	}
 }

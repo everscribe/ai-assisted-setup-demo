@@ -190,6 +190,24 @@ func TestPercentEncodedPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 			require.Equal(t, http.StatusOK, encodedID.Status, "a percent-encoded octet in an id is decoded")
 			require.Equal(t, string(plainID.Body), string(encodedID.Body))
 
+			// And with no actor an encoded octet in an id must still be
+			// the route's 401, not a 404. A port that hands the decoded
+			// path to a path guard answers 404 and leaks that the route
+			// does not exist. Only this shape shows it: with an actor
+			// both answers collapse to 404. Go shipped exactly that for
+			// one commit. c.Do, not validated, because %2F decodes to a
+			// slash and the spec router cannot route the result.
+			for _, path := range []string{
+				"/api/resources/%2e/requests",
+				"/api/resources/%2e%2e/requests",
+				"/api/resources/%2F/requests",
+			} {
+				anonID, err := c.Do(t.Context(), http.MethodGet, path, "", "")
+				require.NoError(t, err)
+				require.Equal(t, http.StatusUnauthorized, anonID.Status,
+					"%s must reach the route, not a path guard", path)
+			}
+
 			// The mount is raw too. Only the status is asserted, for the
 			// reason the mixed-case test gives: /%61pi/me falls outside
 			// the API entirely, onto whatever serves the SPA, whose 404
@@ -254,6 +272,45 @@ func TestDotSegmentPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, http.StatusNotFound, outside.Status,
 				"/./api/me must not reach the API")
+		})
+	}
+}
+
+// TestEscapableCharactersSurviveARoundTrip is the absolute half of the
+// JSON-escaping rule. TestAppsAgreeWithEachOther only pins agreement: if
+// all four ports stripped "<", its comparison would still pass and the
+// contract would still claim the value survives. This asserts the value
+// itself, per app, so the claim is checked rather than assumed.
+func TestEscapableCharactersSurviveARoundTrip(t *testing.T) {
+	for _, app := range apps(t) {
+		app := app
+		t.Run(app.Name, func(t *testing.T) {
+			c := NewClient(app)
+
+			const name = "vault<&>prod"
+			const description = "tags <b> & a line\u2028separator"
+
+			created := validated(t, c, http.MethodPost, "/api/resources", "u_ada",
+				`{"name":"`+name+`","description":"`+description+`","sensitivity":"restricted"}`)
+			require.Equal(t, http.StatusCreated, created.Status)
+			require.Equal(t, name, jsonField(t, created.Body, "name"))
+			require.Equal(t, description, jsonField(t, created.Body, "description"))
+
+			// Read it back, so this pins what was stored rather than an
+			// echo of the request body.
+			id := jsonField(t, created.Body, "id")
+			list := validated(t, c, http.MethodGet, "/api/resources", "u_ada", "")
+			var rows []map[string]any
+			require.NoError(t, json.Unmarshal(list.Body, &rows))
+			found := false
+			for _, r := range rows {
+				if r["id"] == id {
+					found = true
+					require.Equal(t, name, r["name"])
+					require.Equal(t, description, r["description"])
+				}
+			}
+			require.True(t, found, "the resource just registered is missing from the list")
 		})
 	}
 }

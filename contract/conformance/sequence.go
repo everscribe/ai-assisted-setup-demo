@@ -114,6 +114,20 @@ func Lifecycle() []Step {
 		// stays re-runnable.
 		{"dot segment", "GET", "/api/./me", "u_ada", ""},
 		{"dot-dot segment", "GET", "/api/resources/../me", "u_ada", ""},
+		{"dot segment on a real path", "GET", "/api/me/.", "u_ada", ""},
+
+		// The dot-segment rule from the other side, and with no actor,
+		// which is the only spelling that shows it. An octet inside a
+		// captured id decodes to a dot segment, but the path still
+		// matched a registered route byte for byte, so the route's own
+		// 401 fires. A port that hands the decoded path to its path
+		// guard answers 404 instead and leaks that the route does not
+		// exist. With an actor both answers collapse to 404, which is
+		// why these steps send none. Go shipped exactly that regression
+		// for one commit, and nothing in the suite saw it.
+		{"encoded dot in an id, no actor", "GET", "/api/resources/%2e/requests", "", ""},
+		{"encoded dot-dot in an id, no actor", "GET", "/api/resources/%2e%2e/requests", "", ""},
+		{"encoded slash in an id, no actor", "GET", "/api/resources/%2F/requests", "", ""},
 
 		{"unknown path", "GET", "/api/no-such-route", "u_ada", ""},
 		{"method mismatch", "GET", "/api/login", "u_ada", ""},

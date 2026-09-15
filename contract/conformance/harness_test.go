@@ -95,12 +95,18 @@ func names(up []App) string {
 
 // validated performs a request and schema-checks the response. Every
 // request the harness makes goes through here, so layer 1 covers the
-// whole surface rather than a sample of it.
-func validated(t *testing.T, c *Client, method, path, actor, body string) *Response {
+// whole surface rather than a sample of it. note adds caller context to
+// the failure message, which the lifecycle uses to name the step that
+// broke rather than leaving the reader to count the script.
+func validated(t *testing.T, c *Client, method, path, actor, body string, note ...string) *Response {
 	t.Helper()
+	where := fmt.Sprintf("%s: %s %s", c.App.Name, method, path)
+	if len(note) > 0 {
+		where += " [" + strings.Join(note, " ") + "]"
+	}
 	resp, err := c.Do(context.Background(), method, path, actor, body)
-	require.NoError(t, err, "%s: %s %s", c.App.Name, method, path)
+	require.NoError(t, err, where)
 	require.NoError(t, sharedSpec(t).ValidateResponse(context.Background(), method, path, resp),
-		"%s: schema violation", c.App.Name)
+		"%s: schema violation", where)
 	return resp
 }

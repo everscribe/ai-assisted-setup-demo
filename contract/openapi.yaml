@@ -219,15 +219,19 @@ info:
     already belong to: a path either matches a registered route byte for
     byte or it does not, and a redirect to the resolved path is an
     existence oracle, since an unregistered path has nothing to redirect
-    to. Reject it before routing sees it, and check the decoded spelling
-    as well as the raw one, or a %2e smuggles a dot segment past the
-    guard into the framework's own resolution. Node, Rust and Python
-    inherited the 404; Go answered 301 with an HTML body from net/http's
-    ServeMux, which cleans the path, the same way it does for an empty
-    segment. Scoped to paths under /api, as the empty-segment rule is:
-    above the mount the request falls onto whatever serves the SPA, and
-    only the 404 status is pinned there, for the reason the
-    percent-encoding rule gives.
+    to. Reject it before routing sees it, reading the raw path only. A
+    dot segment that arrives percent-encoded is an ordinary octet, and
+    the percent-encoding rule two paragraphs up already makes it an
+    unregistered path; a guard that reads the decoded path instead also
+    rejects an encoded octet inside a captured id, which breaks the rule
+    in the paragraph directly above and answers 404 where the route's
+    own 401 belongs. Node, Rust and Python inherited the 404; Go
+    answered 301 with an HTML body from net/http's ServeMux, which
+    cleans the path, the same way it does for an empty segment. Scoped
+    to paths under /api, as the empty-segment rule is: above the mount
+    the request falls onto whatever serves the SPA, and only the 404
+    status is pinned there, for the reason the percent-encoding rule
+    gives.
 
     JSON escaping inside a string value is not normative. Go's
     encoding/json escapes the four characters < > & and U+2028 into
