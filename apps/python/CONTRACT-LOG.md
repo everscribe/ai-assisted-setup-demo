@@ -120,3 +120,40 @@ that `{"role": 5}` answers `role must be admin or member` here and
 `invalid body` on node and rust. All four are a 400, the contract says the
 text is not normative, and the four-way conformance run passes, so it is not a
 conformance failure. It is a divergence, and the log's job is to record it.
+
+---
+
+## Addendum, written in task 5 with all four apps in view
+
+The read restriction is lifted for task 5, so these two are not questions the
+contract could not answer; they are answers found by comparing four running
+apps, recorded here because this file is where this port's contract questions
+live.
+
+### Item 6 is now checked across apps
+
+The `application/json; charset=utf-8` rule was held for this port by
+`tests/test_router.py` alone, because the only cross-app Content-Type check
+skips below two apps. Four apps in compose means
+`TestAppsAgreeWithEachOther` now compares that header on every lifecycle
+step, and it agrees across go, node, rust and python.
+
+### A dot segment was an open hole, and it was Go's
+
+`GET /api/./me` and `GET /api/resources/../me` were a 404 on node, rust and
+python and a 301 to `/api/me` with an HTML body on go, from net/http's
+ServeMux cleaning the path. Same existence oracle the trailing-slash,
+empty-segment and percent-encoding rules already close. The contract now names it,
+go rejects dot segments alongside empty ones, and two lifecycle steps plus
+`TestDotSegmentPathIsTheSame404AsAnUnknownPath` exercise it. This port needed
+no change: routing on the raw path with no cleaning already gave the right
+answer.
+
+### Go's HTML escaping is accepted, not a divergence to fix
+
+Go's `encoding/json` escapes `<`, `>`, `&` and U+2028 into backslash-u
+forms; starlette's `JSONResponse` (`ensure_ascii=False`) emits them raw, as
+do node and rust. Both spellings decode to the same string. The contract now
+says so explicitly and a lifecycle step registers a resource carrying all
+four characters, so what is checked is that the value survives, not how it is
+spelled on the wire.

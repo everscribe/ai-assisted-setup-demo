@@ -14,3 +14,8 @@ services:
     ports: ["9003:9003"]
     environment:
       PORT: "9003"
+  python:
+    build: ./apps/python
+    ports: ["9004:9004"]
+    environment:
+      PORT: "9004"

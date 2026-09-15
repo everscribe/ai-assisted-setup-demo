@@ -1,4 +1,4 @@
-.PHONY: up down verify test-node check-clean dev-go dev-node dev-rust
+.PHONY: up down verify test-node check-clean dev-go dev-node dev-rust dev-python
 
 up:
 	docker compose up --build -d
@@ -69,6 +69,13 @@ dev-node:
 dev-rust:
 	cd apps/rust/web && pnpm install --frozen-lockfile && pnpm run build
 	cd apps/rust && PORT=9003 cargo run --release
+
+# The venv step is this app's `pnpm install --frozen-lockfile`: creating
+# a venv that already exists is a no-op, so this is safe to re-run.
+dev-python:
+	cd apps/python/web && pnpm install --frozen-lockfile && pnpm run build
+	cd apps/python && python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+	cd apps/python && PORT=9004 .venv/bin/python -m app.main
 
 check-clean:
 	@files=""; \
