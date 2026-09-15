@@ -465,13 +465,27 @@ fuzzy grep would fail on a clean `main` forever.
 | Go | `github.com/everscribe/sdk-go` | `go.mod`, `go.sum` |
 | Node | `@everscribe/sdk-node` | `package.json`, `pnpm-lock.yaml` |
 | Frontends | `@everscribe/components-` (core, element, react, styles) | `web/package.json` and lockfile, `web/index.html`, `web/dist/index.html`, `web/src/**` |
-| Python | a quoted `everscribe...` in dependencies | `pyproject.toml`, `uv.lock` |
+| Python | a quoted `everscribe...` in dependencies | `requirements.txt`, `requirements-dev.txt` |
 | Rust | `everscribe =` under `[dependencies]` | `Cargo.toml`, `Cargo.lock` |
 
 Lock tooling is pinned so the lockfile names are knowable: `pnpm` for Node,
-matching `sdk-node` and `components`, which already use it. `uv` for Python
-is a new choice rather than an existing convention, since `sdk-python` has no
-lockfile today and builds with hatchling. The guard scans npm and yarn
+matching `sdk-node` and `components`, which already use it. `pip` with
+`requirements.txt` for Python.
+
+The only requirement the guard places on dependency tooling is that the
+filename be knowable before the app exists, and `requirements.txt` satisfies
+that as well as a lockfile would. This spec originally picked `uv` on the
+grounds that `sdk-python` has no lockfile today and builds with hatchling, so
+there was no existing convention to match. That argument decided nothing:
+with no convention either way, both options met the guard's requirement, and
+the choice came down to whether the demo should carry a tool the machine does
+not already have. It should not. The owner chose `pip`, and the tradeoff
+being accepted is that `requirements.txt` pins direct dependencies rather
+than locking the full transitive graph with hashes. For a demo that is
+cloned and run rather than deployed, that costs nothing.
+
+The shipped guard already scans `requirements.txt` and `requirements-dev.txt`
+alongside the lockfile names, so this decision needs no Makefile change. The guard scans npm and yarn
 lockfiles anyway, because the demo's frontend is npm today and a stale
 `package-lock.json` surviving the move is the likeliest way a dependency
 slips past.
@@ -484,6 +498,7 @@ check-clean:
 	         apps/*/web/package.json apps/*/web/pnpm-lock.yaml \
 	         apps/*/web/package-lock.json apps/*/web/yarn.lock \
 	         apps/*/Cargo.toml apps/*/Cargo.lock apps/*/pyproject.toml apps/*/uv.lock \
+	         apps/*/requirements.txt apps/*/requirements-dev.txt \
 	         apps/*/web/index.html apps/*/web/dist/index.html; do \
 	  [ -f "$$f" ] && files="$$files $$f"; \
 	done; \
