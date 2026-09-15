@@ -10,19 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Each app copies seed.json independently, and nothing else checks fidelity:
-// normalization only needs ids, and cross-app equality would miss a value
-// wrong the same way everywhere. This test compares served data to
-// seed.json field for field.
-//
-// organizations is skipped: no contract route exposes it, and seed.json's
-// own _notes says the same; _notes itself is prose and also skipped.
-//
+// Each app copies seed.json independently; equality alone would miss a value
+// wrong the same way everywhere, so this compares served data to seed.json
+// field for field. organizations is skipped: no contract route exposes it, and
+// seed.json's own _notes agrees; _notes itself is prose and also skipped.
 // Extra rows are tolerated (other tests mint rows first, and a repeat run
-// against one `make up` sees prior rows too), but every seeded id must
-// match exactly except the fields the lifecycle sequence itself mutates:
-// r_acme_s3's decommission_at, and req_acme_1's
-// status/decided_by/decided_at/revoked_by/revoked_at.
+// against one `make up` sees prior rows too), but every seeded id must match
+// exactly except the fields seedMutableFields below lists as lifecycle-
+// mutated.
 var seedMutableFields = map[string][]string{
 	"r_acme_s3":  {"decommission_at"},
 	"req_acme_1": {"status", "decided_by", "decided_at", "revoked_by", "revoked_at"},

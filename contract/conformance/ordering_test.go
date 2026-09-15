@@ -50,18 +50,14 @@ func assertDeclaredOrder(t *testing.T, path string, rows []orderedRow, descendin
 	}
 }
 
-// The contract's x-ordering block declares a total order for every list
-// endpoint: domain key, then id ascending as tiebreak. These fixtures each
-// hold a pair tied on created_at, so they fail for any app that drops the
-// tiebreak or serves insertion order.
-//
-// Go runs test files alphabetically, so equality_test.go (which replays
-// this lifecycle) runs first. These assertions still hold only because:
-//  1. seeded comments carry March 2026 timestamps vs. the lifecycle's
-//     time.Now(), keeping the seeded three as the ascending prefix; and
-//  2. the lifecycle's new request goes to r_acme_s3, and nothing else here
-//     mints against r_acme_pg, so a fresh request there would sort ahead
-//     of the seeded pair under descending order and break this fixture.
+// The contract's x-ordering block declares a total order for every list endpoint:
+// domain key, then id ascending as tiebreak. These fixtures each hold a pair tied on
+// created_at, so they fail for any app that drops the tiebreak or serves insertion
+// order. Go runs test files alphabetically, so equality_test.go's lifecycle replay
+// runs first; these assertions hold only because (1) seeded comments carry March
+// 2026 timestamps vs. the lifecycle's time.Now(), keeping the seeded three as the
+// ascending prefix, and (2) the lifecycle's new request goes to r_acme_s3, not
+// r_acme_pg, so nothing here sorts ahead of the seeded pair.
 func TestSeededListsMatchTheDeclaredOrder(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

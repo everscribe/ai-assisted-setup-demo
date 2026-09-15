@@ -259,20 +259,14 @@ func TestDotSegmentPathIsTheSame404AsAnUnknownPath(t *testing.T) {
 	}
 }
 
-// Check precedence, on every route that reads a body: 401 first, then 403,
-// then the body. The contract names POST /api/resources as its worked
-// example and FastAPI as a framework that reorders this, so a port binding
-// a body model before the role check answers 400/422 where 403 belongs.
-//
-// The malformed body is the discriminator, since a valid body answers 403
-// regardless of check order (confirmed: moving require_admin after the body
-// read in the Python app stayed green under valid-body tests). The admin
-// row is a positive control: without it, a route refusing everyone would
-// pass, since 403 for a member alone proves nothing.
-//
-// Asserted per app, not left to cross-app equality, which only catches a
-// divergence: four ports that all parsed first would agree with each other
-// and still be wrong.
+// Check precedence, on every route that reads a body: 401, then 403, then
+// parsing. The contract's example is POST /api/resources; FastAPI reorders
+// this by binding a body model before the role check. A malformed body
+// discriminates, since a valid body answers 403 regardless of order
+// (confirmed: moving require_admin after the parse in the Python app stayed
+// green). The admin row is a positive control: 403 for a member alone would
+// prove nothing. Asserted per app, not by equality, which only flags
+// divergence: ports that all parsed first would agree and still be wrong.
 func TestEveryBodyRouteChecksAuthAndRoleBeforeParsing(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

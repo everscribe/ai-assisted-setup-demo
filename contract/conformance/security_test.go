@@ -95,17 +95,12 @@ func TestCrossTenantAndUnknownPathAreIndistinguishable(t *testing.T) {
 
 // A 404 on a cross-tenant read only proves the reader is blocked; the write
 // routes are where a missing tenant filter does damage. Each case pairs a
-// cross-tenant attempt with a same-tenant positive control on the same
-// route, since a cross-tenant miss and an unregistered route are
-// byte-identical by design - without the control this would pass against
-// a route that doesn't exist at all.
-//
-// Deny and revoke are included alongside decommission and approve: all
-// four are admin-only mutations on a single id-named object, found
-// missing a cross-tenant control in the same review.
-//
-// Fixtures are minted here rather than seeded, since mutating a seeded
-// acme row would disturb fixtures other tests pin.
+// cross-tenant attempt with a same-tenant positive control, since a cross-
+// tenant miss and an unregistered route are byte-identical - without it, a
+// nonexistent route would pass too. Deny and revoke join decommission and
+// approve: all four are admin-only, id-named mutations found missing this
+// control in the same review. Fixtures are minted here, not seeded, so other
+// tests' fixtures aren't disturbed.
 func TestCrossTenantWritesAre404WithPositiveControls(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app
@@ -310,19 +305,14 @@ func mintStripeRequest(t *testing.T, c *Client, reason string) string {
 	return requestID(t, resp.Body)
 }
 
-// All eight admin-gated routes are listed, not a sample, the same way
-// TestMissingActorIs401 lists all sixteen authenticated routes. The four
-// destructive ones (revoke, remove member, change role, decommission)
-// matter most: a member who can change roles promotes himself to admin.
-//
-// Each route pairs with a positive control, since refusing u_linus alone
-// only proves he's refused, not that it's about role - a gate keyed on
-// his user id would pass too. It's also checked against a second,
-// freshly-invited member, so a gate keyed on the name has nowhere to hide.
-//
-// Fixtures are minted here: no seeded member/resource is touched, and
-// nothing is minted against r_acme_pg, whose request order
-// ordering_test.go pins.
+// All eight admin-gated routes are listed, not sampled, as TestMissingActorIs401
+// lists sixteen. The four destructive ones (revoke, remove member, change role,
+// decommission) matter most: a member who can change roles could promote himself to
+// admin. Each pairs with a positive control, since refusing u_linus alone only shows
+// he's refused, not that it's about role - a gate keyed on his id would pass too -
+// and also against a freshly-invited member, so a name-keyed gate has nowhere to
+// hide. Fixtures are minted here, not seeded, and none against r_acme_pg, whose
+// order ordering_test.go pins.
 func TestMemberCannotUseAdminRoutes(t *testing.T) {
 	for _, app := range apps(t) {
 		app := app

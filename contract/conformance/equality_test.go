@@ -57,19 +57,14 @@ func canonicalizeAllow(v string) string {
 	return strings.Join(methods, ",")
 }
 
-// canonicalize collapses timestamp placeholders (see tsPlaceholder) and
-// sorts array elements into a stable order, so two apps compare equal
-// despite a clock-resolution-driven ordering tie: Node's millisecond
-// clock ties rows Go's microsecond clock never does, so Node applies the
-// contract's id tiebreak where Go never needs to. Both apps follow the
-// ordering rule correctly, but the tied rows' relative order isn't
-// portable across apps, only the set is. Object key order is already
-// deterministic (Normalizer sorts map keys), so only arrays need this.
-//
-// Recurses into nested arrays unconditionally. No schema here has one
-// today, so an ordering bug at that depth is latent, not live, but this
-// function's job is only cross-app set comparison - ordering_test.go's
-// per-app property check is what catches an ordering bug in a single list.
+// canonicalize collapses timestamp placeholders (see tsPlaceholder) and sorts arrays
+// into a stable order: Node's millisecond clock ties rows Go's microsecond clock
+// never does, so Node applies the contract's id tiebreak where Go never needs to.
+// Both follow the ordering rule correctly, but a tied pair's relative order isn't
+// portable, only the set is. Object keys are already deterministic (Normalizer sorts
+// map keys), so only arrays need this. It recurses into nested arrays; no schema has
+// one yet, so a bug there is latent, since this only does cross-app set comparison -
+// ordering_test.go's per-app check is what catches an ordering bug within one list.
 func canonicalize(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
