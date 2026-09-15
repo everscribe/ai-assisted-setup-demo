@@ -28,6 +28,10 @@ ROLES = ("admin", "member")
 DEFAULT_ROLE = "member"
 DEFAULT_SENSITIVITY = "internal"
 
+# The four creating methods take _id and _at keyword seams so tests can plant
+# rows with a chosen id and timestamp. Production callers never pass them, and
+# they are not part of the Store Protocol.
+
 
 def _new_id(prefix: str) -> str:
     return prefix + secrets.token_hex(6)
@@ -88,16 +92,25 @@ class MemoryStore:
             rows = [u for u in self._users if u.organization_id == org_id]
         return [replace(u) for u in _by_created_at_then_id(rows)]
 
-    def invite_member(self, org_id: str, name: str, email: str, role: str) -> User:
+    def invite_member(
+        self,
+        org_id: str,
+        name: str,
+        email: str,
+        role: str,
+        *,
+        _id: str | None = None,
+        _at: str | None = None,
+    ) -> User:
         if role not in ROLES:
             role = DEFAULT_ROLE
         user = User(
-            id=_new_id("u_"),
+            id=_id or _new_id("u_"),
             name=name,
             email=email,
             role=role,
             organization_id=org_id,
-            created_at=now_rfc3339(),
+            created_at=_at or now_rfc3339(),
         )
         with self._lock:
             self._users.append(user)
@@ -138,7 +151,6 @@ class MemoryStore:
         _id: str | None = None,
         _at: str | None = None,
     ) -> Resource:
-        # _id and _at are test seams for planting rows; production never passes them.
         resource = Resource(
             id=_id or _new_id("r_"),
             name=name,
@@ -174,19 +186,28 @@ class MemoryStore:
         with self._lock:
             return replace(self._find_request(org_id, request_id))
 
-    def request_access(self, org_id: str, resource_id: str, requested_by: str, reason: str) -> AccessRequest:
+    def request_access(
+        self,
+        org_id: str,
+        resource_id: str,
+        requested_by: str,
+        reason: str,
+        *,
+        _id: str | None = None,
+        _at: str | None = None,
+    ) -> AccessRequest:
         with self._lock:
             resource = self._find_resource(org_id, resource_id)
             if resource.decommission_at is not None:
                 raise ConflictError("conflict")
             request = AccessRequest(
-                id=_new_id("req_"),
+                id=_id or _new_id("req_"),
                 resource_id=resource_id,
                 organization_id=org_id,
                 requested_by=requested_by,
                 reason=reason,
                 status="pending",
-                created_at=now_rfc3339(),
+                created_at=_at or now_rfc3339(),
             )
             self._requests.append(request)
             return replace(request)
@@ -219,16 +240,25 @@ class MemoryStore:
             ]
         return [replace(c) for c in _by_created_at_then_id(rows)]
 
-    def add_comment(self, org_id: str, request_id: str, author_id: str, body: str) -> Comment:
+    def add_comment(
+        self,
+        org_id: str,
+        request_id: str,
+        author_id: str,
+        body: str,
+        *,
+        _id: str | None = None,
+        _at: str | None = None,
+    ) -> Comment:
         with self._lock:
             self._find_request(org_id, request_id)
             comment = Comment(
-                id=_new_id("c_"),
+                id=_id or _new_id("c_"),
                 request_id=request_id,
                 organization_id=org_id,
                 author_id=author_id,
                 body=body,
-                created_at=now_rfc3339(),
+                created_at=_at or now_rfc3339(),
             )
             self._comments.append(comment)
             return replace(comment)
