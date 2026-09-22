@@ -317,10 +317,26 @@ code {
   min-width: 0;
 }
 
+/* The name is the only part of the row allowed to shrink. Without this the
+   button and the pill shrink too, and the button's label overflows across
+   the pill instead of the row just getting tighter. */
+.board-name code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-name .sensitivity-pill,
+.board-name .badge {
+  flex-shrink: 0;
+}
+
 .board-actions {
   display: flex;
   gap: 0.25rem;
   opacity: 0.6;
+  flex-shrink: 0;
 }
 
 .board-actions button {
