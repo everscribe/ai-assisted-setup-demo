@@ -45,6 +45,26 @@ jobs:
       - name: apps/rust frontend DOM tests
         run: cd apps/rust/web && pnpm install --frozen-lockfile && pnpm test
 
+  # Mirrors the rust job: unit tests first, then the frontend suite, on
+  # the same action pins. pip and requirements-dev.txt, not uv or poetry.
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r apps/python/requirements-dev.txt
+      - run: cd apps/python && python -m pytest tests -q
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: apps/python frontend component tests
+        run: cd apps/python/web && pnpm install --frozen-lockfile && pnpm test
+
   conformance:
     runs-on: ubuntu-latest
     steps:
