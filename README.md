@@ -1,34 +1,69 @@
-# AI-assisted-setup-demo
+# ai-assisted-setup-demo
 
-This is a sample repo you can use to get a feel for how you can use
-AI to setup Everscribe for a codebase either using the [Everscribe hosted AI agent](https://everscribe.io/docs/quickstart/hosted-ui) or the [BYOK flow](https://everscribe.io/docs/quickstart/skill).
+This is a sample repo you can use to get a feel for how you can use AI to
+set up Everscribe for a codebase, either using the
+[Everscribe hosted AI agent](https://everscribe.io/docs/quickstart/hosted-ui)
+or the [BYOK flow](https://everscribe.io/docs/quickstart/skill).
 
-You'll want to run it locally first to get an idea of what the example app
-looks like before Everscribe is setup. Then once you go through the flow of your choice, you can run it again and to see how easy it was to to setup
+## Deliberately uninstrumented
 
-## Running it locally
+This repo's entire job is to be a clean target for that setup flow. On
+`main`, no Everscribe SDK appears in any manifest or lockfile, no
+`@everscribe/components-*` appears in any frontend, and no audit event is
+recorded anywhere. Each app carries the seams instrumentation belongs at (a
+store interface, a plumbed context) and nothing more, so the AI agent has
+somewhere to attach without the demo pre-empting its work. Agent runs land
+on their own branches; `main` stays clean.
 
-Requires Go 1.22+ and Node 18+.
+This is four apps, one per language, so the setup flow can be exercised
+against a target that is identical in every dimension except language
+and framework. All four implement one shared HTTP contract
+(`contract/openapi.yaml`), and a conformance harness compares them to
+each other over HTTP.
+
+## App matrix
+
+| App | Backend | Frontend | Status |
+|---|---|---|---|
+| `apps/go` | Gin | React | available |
+| `apps/node` | Express | Svelte | planned |
+| `apps/rust` | Axum | vanilla TS | planned |
+| `apps/python` | FastAPI | Vue | planned |
+
+## Running an app locally
+
+Requires Go 1.25+, Node 18+ with `pnpm` (via `corepack enable`), Rust
+1.96+, and Python 3.12+.
 
 ```bash
-make dev   # build the SPA and run the Go server on :9001
+make dev-go      # build the SPA and run the Go server on :9001
 ```
 
-Open <http://localhost:9001> and sign in as one of the seeded users. For hot
-reload, run the Vite dev server against the API instead:
+Open <http://localhost:9001> and
+sign in as one of the seeded users. For hot reload, run the Vite dev
+server against the API instead:
 
 ```bash
-go run .               # Go API on :9001
-cd web && npm run dev  # Vite dev server, /api proxied
+cd apps/go && go run .                # Go API on :9001
+cd apps/go/web && pnpm run dev        # Vite dev server, /api proxied
+
 ```
 
 ### With Docker
 
-No Go or Node toolchain needed, just Docker:
+No Go, Node, Rust or Python toolchain needed, just Docker:
 
 ```bash
-docker build -t everscribe-demo .
-docker run --rm -p 9001:9001 everscribe-demo
+make up      # docker compose up --build -d
+make down    # docker compose down
+make verify  # bring all four up, run the conformance suite, tear down
 ```
 
 Then open <http://localhost:9001>.
+
+## Pointing the setup flow at a single app
+
+Both the hosted flow and the BYOK skill instrument one app at a time. Point
+either one at the subdirectory for the app you want to instrument, for
+example `apps/go`, rather than the repo root. Each app is a complete,
+independently buildable project with its own manifest and lockfile.

@@ -1,0 +1,6 @@
+services:
+  go:
+    build: ./apps/go
+    ports: ["9001:9001"]
+    environment:
+      PORT: "9001"

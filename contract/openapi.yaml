@@ -1,0 +1,1000 @@
+openapi: 3.0.3
+info:
+  title: Access portal demo
+  version: "1.0.0"
+  description: |
+    The contract all four demo apps implement. Written from the Go app's
+    behaviour. Every app registers exactly these eighteen routes.
+
+    Auth is a single header, X-User-ID, set by the SPA after POST
+    /api/login. There are no sessions and no passwords. POST /api/login
+    and GET /api/health are the only two anonymous routes; every other
+    route requires X-User-ID to name a seeded user or it fails with 401.
+
+    Status codes used across the API, beyond the per-route 2xx:
+
+    - 400: request body missing or invalid for that route.
+    - 401: X-User-ID is missing or does not match a known user.
+    - 403: the actor is authenticated but not an admin, on an admin-only
+      route. Body is exactly {"error": "admin role required"}.
+    - 404: either the path does not exist, or the path names a resource
+      outside the actor's organization. Both cases return the identical
+      body {"error": "not found"}, on purpose, so a cross-tenant probe
+      cannot tell "wrong tenant" from "does not exist".
+    - 405: the path exists but not for this method, for example GET on
+      a POST-only route such as /api/login. The response carries an
+      Allow header listing the methods that are registered for the path.
+    - 409: the store rejected a state transition that does not apply,
+      for example approving a request that is already denied, or
+      requesting access to a decommissioned resource.
+
+    Check order is part of the contract, not an implementation detail.
+    A request that would fail more than one of the checks above fails on
+    the first one in this order:
+
+      401 authentication, then 403 admin role, then 400 body parsing and
+      field validation, then the store's 404 or 409.
+
+    So a member POSTing an unparseable body to POST /api/resources gets
+    403, not 400, because the admin check runs before the body is read.
+    A member POSTing an unparseable body to POST
+    /api/resources/{unknown}/requests gets 400, not 404, because that
+    route has no admin check and the body is read before the store is
+    touched. A port must not let its framework reorder this. Binding a
+    request model as a route parameter, which is what FastAPI does with
+    a Pydantic body model and what Express does with a validating body
+    parser, runs validation before the handler's role check and would
+    answer 422 or 400 where this contract requires 403. Do the auth and
+    role checks inside the handler, ahead of any body parsing.
+
+    Input trimming is part of the contract. Leading and trailing
+    whitespace is stripped before the value is validated and before it
+    is stored, from these fields:
+
+    - name, description, and sensitivity on POST /api/resources.
+    - name and email on POST /api/members.
+    - reason on POST /api/resources/{id}/requests.
+    - body on POST /api/requests/{id}/comments.
+
+    A required field that trims to empty is a 400 carrying that route's
+    message: {"error": "name required"} for a resource,
+    {"error": "name and email required"} for a member,
+    {"error": "reason required"} for an access request, and
+    {"error": "body required"} for a comment. description and
+    sensitivity are trimmed but not required; an omitted or empty
+    sensitivity becomes "internal".
+
+    A JSON null is equivalent to omitting the field. It is never a type
+    error. On an optional field, null takes that field's documented
+    default, so {"role": null} on POST /api/members creates a member and
+    {"sensitivity": null} on POST /api/resources stores "internal". On a
+    required field, null is a missing field, so {"name": null} on POST
+    /api/members is {"error": "name and email required"} with a 400, not
+    a schema complaint. Any other wrong type, a number or an object
+    where a string is declared, is a 400. This rule exists because it is
+    what a struct-binding decoder does by default: Go's encoding/json
+    leaves the target at its zero value on a null, and a port must match
+    that rather than let a hand-written type guard reject null.
+
+    Unknown request fields are ignored. A body carrying a field the
+    route's schema does not declare is accepted and the extra field is
+    discarded, so {"name": "x", "bogus": 1} on POST /api/resources is a
+    201. Every request schema below therefore sets
+    additionalProperties: true. Do not mirror a strict schema here with
+    serde's deny_unknown_fields or Pydantic's extra="forbid"; that would
+    answer 400 where this contract requires success. Response schemas
+    are the opposite and stay strict: a response carrying a field its
+    schema does not declare is a conformance failure.
+
+    Field names are matched byte for byte, and a key that matches only
+    case-insensitively is one of those unknown fields. {"Email": "x"},
+    {"EMAIL": "x"} and {"eMaIl": "x"} on POST /api/login are each
+    ignored, so each answers exactly as {} does:
+    {"error": "email required"} with a 400, never a login. The same
+    holds on every route, so {"ROLE": "admin"} on PUT
+    /api/members/{id}/role is {"error": "role must be admin or member"}
+    with a 400 and promotes nobody. This sits on the seam between the
+    ignore-unknown-fields rule above and the case-sensitive path rule
+    below, and it needs pinning because Go's encoding/json matches field
+    names case-insensitively by default, which no other runtime here
+    does: a port built on it must drop the case variant rather than bind
+    it. A case variant is ignored, not rejected, so it never produces an
+    error kind of its own.
+
+    Two fields are pointedly not trimmed. The email on POST /api/login
+    is matched exactly, so " ada@acme.test " is
+    {"error": "no user with that email"} with a 401, not a login, while
+    an email that is absent or the empty string is
+    {"error": "email required"} with a 400. The role on PUT
+    /api/members/{id}/role is compared exactly, so " admin " is
+    {"error": "role must be admin or member"} with a 400.
+
+    Timestamps are RFC 3339 in UTC with a literal Z suffix, for example
+    2026-03-14T12:00:00Z. Never a numeric offset such as +00:00, never a
+    local time, and never a separator other than T. Every timestamp in
+    contract/seed.json has whole-second precision with no fractional
+    part, so an implementation that appends .000 or writes +00:00 fails
+    the seed comparison even though it names the same instant.
+    Timestamps minted at runtime, on records the seed does not cover,
+    are the opposite: they must carry a fractional part, because
+    x-ordering.timestamp-precision at the end of this file puts a floor
+    of at least millisecond precision on them. Any precision at or above
+    that floor is accepted and the digit count above it is not
+    specified. Read that entry for why the floor is there: a port
+    written to this paragraph alone can emit whole-second runtime stamps
+    and then fail TestDecommissionIsIdempotentAndRestampsTheTimestamp
+    for being right, which is the failure the floor exists to prevent.
+
+    HEAD and OPTIONS are registered on no route and return 405. OPTIONS
+    carries the same JSON body as any other method mismatch. HEAD
+    /api/health is a 405, not an empty 200, and no conformance check may
+    require a body from it: RFC 9110 4.3.2 requires that a server MUST NOT
+    send content in a response to HEAD, so a conformant HEAD response has
+    no body. Only the body is omitted. RFC 9110 9.3.2 keeps the rest, so a
+    HEAD response carries the same header fields the equivalent GET would
+    have carried, Content-Type included: a HEAD 405 sends the same Allow
+    and the same application/json; charset=utf-8 as the 405 a GET gets.
+    Build the ordinary response and let the HTTP layer drop the body for
+    HEAD, rather than hand-building a bodiless response, which loses the
+    headers that make HEAD worth asking. This needs pinning because
+    Starlette and Express both route HEAD to the GET handler
+    automatically, and frameworks commonly answer OPTIONS themselves; both
+    behaviours must be turned off.
+
+    The error string in a 400 body is not normative. The Go app appends
+    its JSON decoder's own message, which produces text no other
+    language can reproduce, for example "invalid body: json: cannot
+    unmarshal number into Go struct field .email of type string". Only
+    the 400 status code is binding, and no conformance check may match
+    on a message that begins "invalid body:". The messages quoted above
+    under input trimming are the app's own text and are stable. The
+    Allow header on a 405 lists the registered methods in an
+    unspecified order.
+
+    A registered path does not redirect on a trailing slash. GET
+    /api/me/ is a 404, not a redirect to /api/me. A redirect would let a
+    caller distinguish "exists" from "does not exist" by probing paths,
+    which is the same leak the cross-tenant 404 rule closes. The rule
+    covers the mount path itself, which is the API's own surface rather
+    than the static layer above it: a bare GET /api must reach the API's
+    own JSON 404 rather than redirecting to /api/. The Go app registers
+    both /api and /api/ on its outer mux for exactly this reason,
+    because registering only the subtree left the mux answering 301 with
+    an HTML body.
+
+    Every path rule in this family - the trailing slash above, and the
+    empty segment, path case sensitivity, percent-encoding and dot
+    segments below - is scoped to paths under /api. What sits above the
+    mount is whatever serves the SPA, and this contract does not specify
+    it. Four frameworks serve static files four different ways and
+    answer the same request four different ways: GET /%2e is 301 on Go
+    and Node, 307 on Rust and 404 on Python; GET /. is 404, 301, 307 and
+    307; GET /assets is 301, 301, 307 and 404; GET /index.html is 301 on
+    Go and 200 on the other three. Nothing in this demo reaches those
+    edges, so the contract says nothing about them rather than pinning a
+    status it would then have to force four static file servers to agree
+    on.
+
+    One property above the mount is pinned, because it is the security
+    half of the same rules and it holds on all four today: a path whose
+    prefix is not /api byte for byte must not reach the API. GET
+    /API/me, GET /%61pi/me and GET /./api/me each fall outside the API
+    and must never answer with a user record, whatever the static layer
+    chooses to do with them. That non-disclosure is what the rules under
+    /api exist for. The status those three carry is not pinned; all four
+    apps answer 404 today, and a port that answered a redirect instead
+    would still be conformant.
+
+    A path containing an empty segment is a 404 from the API's own JSON
+    handler, for the same reason and in the same class. GET /api//me is
+    {"error": "not found"} with a 404, never Ada's record and never a
+    redirect to /api/me, and so is GET /api/resources// and any other
+    path under /api with two consecutive slashes. Reject it before routing sees it:
+    left to a framework, the three ports here answered three different
+    ways, Go redirecting 301 with an HTML body from net/http's ServeMux,
+    which cleans the path, Rust answering 200 because axum's
+    nest_service collapsed //me to /me, and only Node answering 404.
+    A single trailing slash is not an empty segment; it is the
+    trailing-slash rule above, and it has the same 404 answer anyway.
+
+    Paths are case sensitive, for the same reason. GET /api/ME is a 404
+    identical to GET /api/no-such-route, never Ada's record. Above the
+    mount only the security half holds, as the paragraph above says: GET
+    /API/me must not reach the API, and its status is not pinned.
+    Without this, a mixed-case probe is an existence oracle - a
+    registered path answers 401 with no actor while an unregistered one
+    answers 404 - which is exactly the leak the trailing-slash rule
+    closes. Axum and FastAPI are case sensitive by default; Express is
+    not, and needs caseSensitive: true on the router and
+    "case sensitive routing" on the app that mounts it.
+
+    A percent-encoded octet in a path is not decoded before routing.
+    GET /api/%6de is {"error": "not found"} with a 404, never Ada's
+    record, and so is GET /api/%72esources. This is the same rule
+    as the trailing slash, the empty segment and path case sensitivity:
+    a path either matches a registered route byte for byte or it does
+    not. Frameworks disagree by default, so a port must check rather
+    than assume. Express and axum match the raw path; Gin reads
+    URL.Path, already decoded, unless UseRawPath is set, and served
+    Ada's record here until it was. Above the mount only the security
+    half holds, as it does for case sensitivity: GET /%61pi/me must not
+    reach the API and must never answer with Ada's record. Neither its
+    status nor its body is pinned, because that path falls outside the
+    API entirely, onto whatever serves the SPA. Starlette routes on the
+    ASGI-decoded scope["path"], so a port built on it must check this
+    rather than inherit it.
+
+    Raw routing is not raw path parameters. An octet inside a captured
+    id is decoded before the store sees it, so GET
+    /api/resources/r%5Facme_pg/requests is the same request as GET
+    /api/resources/r_acme_pg/requests and answers with the same list.
+    All three ports already do this, Gin through UnescapePathValues,
+    Express through its own param decoding and axum through its Path
+    extractor, so the fix for the routing rule above must leave it on.
+    Turning routing raw by turning decoding off everywhere trades one
+    divergence for another.
+
+    A path containing a dot segment is not resolved before routing. A
+    "." or ".." segment under /api is {"error": "not found"} with a 404
+    from the API's own JSON handler, so GET /api/./me, GET
+    /api/resources/../me and GET /api/me/. each answer exactly as GET
+    /api/no-such-route does, never Ada's record and never a redirect to
+    /api/me. This is the fourth member of the set the trailing slash,
+    the empty segment, path case sensitivity and percent-encoding
+    already belong to: a path either matches a registered route byte for
+    byte or it does not, and a redirect to the resolved path is an
+    existence oracle, since an unregistered path has nothing to redirect
+    to. Reject it before routing sees it, reading the raw path only. A
+    dot segment that arrives percent-encoded is an ordinary octet, and
+    the percent-encoding rule two paragraphs up already makes it an
+    unregistered path; a guard that reads the decoded path instead also
+    rejects an encoded octet inside a captured id, which breaks the rule
+    in the paragraph directly above and answers 404 where the route's
+    own 401 belongs. Node, Rust and Python inherited the 404; Go
+    answered 301 with an HTML body from net/http's ServeMux, which
+    cleans the path, the same way it does for an empty segment. Scoped
+    to paths under /api, as the whole family is: above the mount GET
+    /./api/me must not reach the API and must never answer with Ada's
+    record, and nothing else about it is pinned.
+
+    JSON escaping inside a string value is not normative. Go's
+    encoding/json escapes the four characters < > & and U+2028 into
+    their six-character backslash-u forms by default, where Node, Rust
+    and Python emit them raw. Both spellings decode to the same string,
+    so this is a serializer detail in the same class as object key
+    order, not something a client can observe once it has parsed the
+    body. Conformance comparisons are made on parsed values, never on
+    response bytes, and no check may require either spelling. What is
+    pinned is that the value survives: a field written with any of those
+    four characters in it reads back with them intact, on every port.
+
+    Every response that has a body, success or error, is
+    application/json; charset=utf-8. This includes GET /api/health and
+    every 4xx. The two responses that have no body, the 204 from POST
+    /api/logout and the 204 from DELETE /api/members/{id}, send no
+    Content-Type header at all.
+
+servers:
+  - url: /api
+
+security:
+  - UserID: []
+
+paths:
+  /login:
+    post:
+      summary: Log in by email
+      description: >
+        Looks up a seeded user by email. No password; this is a demo.
+        The frontend stores the returned user's id and sends it as
+        X-User-ID on every later request.
+
+        Emails are not unique, because POST /api/members does not enforce
+        uniqueness, so this lookup can match more than one user. It
+        resolves to the first match under the same total order every list
+        endpoint uses, created_at ascending then id ascending. A duplicate
+        of a seeded email is always minted later, so the seeded user
+        always wins and the answer never changes between two runs against
+        the same data. Storage order must not decide this: ranging a hash
+        map and returning the first hit answers differently run to run in
+        any runtime that randomizes map iteration, which is what Go does
+        by design. Collect every match and order them.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: No user with that email.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "no user with that email"}
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /logout:
+    post:
+      summary: Log out
+      description: >
+        No server-side session to clear. The route exists so the SPA has
+        a real call to make on sign-out.
+      responses:
+        '204':
+          description: Logged out.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /me:
+    get:
+      summary: Get the current user
+      description: >
+        Only ever 200 or 401. The handler looks up the actor once, in
+        requireActor, and returns that same user back; there is no
+        second lookup that could miss and produce a 404.
+      responses:
+        '200':
+          description: The authenticated user.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /members:
+    get:
+      summary: List members of the actor's organization
+      description: >
+        Ordered by created_at ascending, then id ascending. See
+        x-ordering.
+      responses:
+        '200':
+          description: Members of the actor's organization.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/User'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Invite a member
+      description: >
+        Admin only. Email uniqueness is not enforced: a duplicate email,
+        including one already belonging to a seeded user, creates a
+        second user and returns 201. POST /api/login says which of the
+        two an email then resolves to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteMemberRequest'
+      responses:
+        '201':
+          description: The new member.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /members/{id}:
+    delete:
+      summary: Remove a member
+      description: >
+        Admin only. Removal does not cascade. The user row goes and
+        nothing else moves: the access requests they opened and the
+        comments they wrote stay exactly as they were, still served by
+        the lists that held them, and requested_by and author_id still
+        name the removed id. No *_by or *_id field in any response schema
+        carries a referential guarantee, so an id that no longer resolves
+        to a user is a valid value rather than a broken row. Deleting the
+        history would be the surprising behaviour in an access-request
+        app, and there is no 409 on this route to refuse the removal with
+        either. The removed id stops authenticating immediately, so a
+        later request carrying it as X-User-ID is a 401.
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /members/{id}/role:
+    put:
+      summary: Change a member's role
+      description: Admin only.
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeMemberRoleRequest'
+      responses:
+        '200':
+          description: The updated member.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /resources:
+    get:
+      summary: List resources in the actor's organization
+      description: >
+        Includes decommissioned resources so historical context stays
+        visible. Ordered by created_at ascending, then id ascending.
+        See x-ordering.
+      responses:
+        '200':
+          description: Resources in the actor's organization.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Resource'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Register a resource
+      description: Admin only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterResourceRequest'
+      responses:
+        '201':
+          description: The new resource.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Resource'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /resources/{id}/decommission:
+    post:
+      summary: Decommission a resource
+      description: >
+        Admin only. Existing access requests are preserved; new access
+        requests against the resource fail with 409. Idempotent:
+        decommissioning an already-decommissioned resource returns 200
+        again and re-stamps decommission_at, rather than 409.
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: >
+            The decommissioned resource. Returned again, with
+            decommission_at re-stamped to the new call's time, if the
+            resource was already decommissioned.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Resource'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /resources/{id}/requests:
+    get:
+      summary: List access requests for a resource
+      description: >
+        Ordered by created_at descending, then id ascending. See
+        x-ordering. The tiebreak is load-bearing: without it, requests
+        with an equal created_at order arbitrarily under Go's unstable
+        sort, while the other three languages' stable sorts would not.
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Access requests for the resource.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Request access to a resource
+      description: >
+        Any organization member can request access. Fails with 409 if
+        the resource has been decommissioned.
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestAccessRequest'
+      responses:
+        '201':
+          description: The new access request, in pending status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/approve:
+    post:
+      summary: Approve a pending request
+      description: >
+        Admin only. Fails with 409 if the request is not pending, for
+        example already approved, denied, or revoked.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The approved request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/deny:
+    post:
+      summary: Deny a pending request
+      description: >
+        Admin only. Denial is terminal. Fails with 409 if the request is
+        not pending.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The denied request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/revoke:
+    post:
+      summary: Revoke a previously approved request
+      description: >
+        Admin only. Fails with 409 if the request is not currently
+        approved, for example revoking an already-revoked request is
+        409 the same way. Revoking sets revoked_by and revoked_at and
+        leaves decided_by and decided_at exactly as the approval wrote
+        them, so a revoked request still records who approved it and
+        when. Until now this was written down only by the shape of
+        req_globex_2 in contract/seed.json, which carries all four
+        fields; the rule is the prose, and the fixture is its worked
+        example.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The revoked request.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessRequest'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /requests/{id}/comments:
+    get:
+      summary: List comments on a request
+      description: >
+        Ordered by created_at ascending, then id ascending. See
+        x-ordering.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Comments on the request.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Comment'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+    post:
+      summary: Add a comment to a request
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCommentRequest'
+      responses:
+        '201':
+          description: The new comment.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Comment'}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+  /health:
+    get:
+      summary: Health check
+      description: The only other anonymous route besides login.
+      security: []
+      responses:
+        '200':
+          description: Always ok when the process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, enum: [ok]}
+                additionalProperties: false
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+
+components:
+  securitySchemes:
+    UserID:
+      type: apiKey
+      in: header
+      name: X-User-ID
+      description: >
+        The id of a seeded user. There is no token; the header value is
+        looked up directly. Missing or unknown is a 401.
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+      description: A user id, for example u_ada.
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+      description: A resource id, for example r_acme_pg.
+    RequestId:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+      description: An access request id, for example req_acme_1.
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+      additionalProperties: false
+
+    Organization:
+      description: >
+        No route in this API returns organizations. The schema is here
+        because organization_id on every other record points at one, and
+        because contract/seed.json declares the two tenant rows for a
+        port to hardcode. Nothing in a conformance run can reach this
+        collection, so a passing seed check says nothing about it.
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    User:
+      type: object
+      required: [id, name, email, role, organization_id, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        email: {type: string}
+        role: {type: string, enum: [admin, member]}
+        organization_id: {type: string}
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    Resource:
+      type: object
+      required: [id, name, description, sensitivity, organization_id, registered_by, created_at]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        sensitivity:
+          type: string
+          description: >
+            Free-form label, not an enum. The app recognises public,
+            internal, confidential, and restricted, and defaults an
+            omitted value to internal, but it stores whatever it is
+            given. The seeded cast only ever uses confidential and
+            restricted.
+        organization_id: {type: string}
+        registered_by: {type: string, description: The id of the user who registered the resource.}
+        created_at: {type: string, format: date-time}
+        decommission_at:
+          type: string
+          format: date-time
+          description: Present only once the resource has been decommissioned.
+      additionalProperties: false
+
+    AccessRequest:
+      type: object
+      required: [id, resource_id, organization_id, requested_by, reason, status, created_at]
+      properties:
+        id: {type: string}
+        resource_id: {type: string}
+        organization_id: {type: string}
+        requested_by: {type: string}
+        reason: {type: string}
+        status: {type: string, enum: [pending, approved, denied, revoked]}
+        decided_by:
+          type: string
+          description: >
+            The admin who approved or denied. Absent while pending, and
+            kept unchanged once the request is revoked.
+        decided_at:
+          type: string
+          format: date-time
+          description: >
+            Absent while pending, and kept unchanged once the request is
+            revoked.
+        revoked_by:
+          type: string
+          description: The admin who revoked. Present only once revoked.
+        revoked_at:
+          type: string
+          format: date-time
+          description: Present only once revoked.
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    Comment:
+      type: object
+      required: [id, request_id, organization_id, author_id, body, created_at]
+      properties:
+        id: {type: string}
+        request_id: {type: string}
+        organization_id: {type: string}
+        author_id: {type: string}
+        body: {type: string}
+        created_at: {type: string, format: date-time}
+      additionalProperties: false
+
+    LoginRequest:
+      type: object
+      required: [email]
+      properties:
+        email: {type: string}
+      additionalProperties: true
+
+    InviteMemberRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name: {type: string}
+        email: {type: string}
+        role:
+          type: string
+          enum: [admin, member]
+          description: >
+            Optional. If omitted, null, or a string value that is not
+            admin or member, defaults to member. A non-string value
+            other than null violates this schema and is rejected with
+            400; see the null rule in the top-level description.
+      additionalProperties: true
+
+    ChangeMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: {type: string, enum: [admin, member]}
+      additionalProperties: true
+
+    RegisterResourceRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        sensitivity:
+          type: string
+          description: Defaults to internal if omitted, null, or empty.
+      additionalProperties: true
+
+    RequestAccessRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: {type: string}
+      additionalProperties: true
+
+    AddCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body: {type: string}
+      additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: The request body was missing a required field or failed to parse.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+    Unauthorized:
+      description: X-User-ID is missing or does not name a known user.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: unauthorized}
+    Forbidden:
+      description: The actor is authenticated but is not an admin.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "admin role required"}
+    NotFound:
+      description: >
+        Returned both for an unknown path and for a resource in another
+        tenant. The two are deliberately identical so the boundary does
+        not leak existence.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "not found"}
+    Conflict:
+      description: The store rejected a state transition that does not apply.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: conflict}
+    MethodNotAllowed:
+      description: >
+        The path is registered but not for this method. The response
+        carries an Allow header listing the methods that are.
+      headers:
+        Allow:
+          schema: {type: string}
+          description: Comma-separated list of methods registered for this path.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "method not allowed"}
+
+x-ordering:
+  description: >
+    Total order for every list endpoint: the domain key, then id
+    ascending as tiebreak. id alone is not a usable domain key across
+    independently written apps, since generated ids are a random hex
+    suffix that can sort either side of the seeded rows, so members
+    and resources use created_at as their domain key instead.
+    created_at is compared as a parsed instant, never as a string:
+    runtime-minted rows may carry fractional seconds while every seed
+    row has whole-second precision, so lexicographic comparison is not
+    reliable within the same second.
+  GET /api/members:                   [created_at asc, id asc]
+  GET /api/resources:                 [created_at asc, id asc]
+  GET /api/resources/{id}/requests:   [created_at desc, id asc]
+  GET /api/requests/{id}/comments:    [created_at asc, id asc]
+  examples:
+    description: >
+      Worked examples over contract/seed.json. Each group holds a pair
+      tied on created_at, so these two sequences fail for any port that
+      drops the id tiebreak or serves insertion order.
+    GET /api/resources/r_acme_pg/requests: [req_acme_1, req_acme_4, req_acme_5]
+    GET /api/requests/req_acme_1/comments: [c_acme_1, c_acme_2, c_acme_3]
+  timestamp-precision:
+    description: >
+      Seeded rows carry whole-second timestamps. Runtime-minted timestamps
+      must carry at least millisecond precision. Of the runtimes in this
+      repo today, Go clears the floor by several orders of magnitude and
+      Node meets it exactly, so the floor costs neither port anything. The
+      floor exists because the conformance suite asserts that a second
+      decommission re-stamps decommission_at, and at whole-second
+      resolution a correct implementation would return the same value
+      twice and fail for being right. Comparison is still by parsed
+      instant, and any precision at or above the floor is accepted.
