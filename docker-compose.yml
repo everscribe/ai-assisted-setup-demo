@@ -4,3 +4,8 @@ services:
     ports: ["9001:9001"]
     environment:
       PORT: "9001"
+  node:
+    build: ./apps/node
+    ports: ["9002:9002"]
+    environment:
+      PORT: "9002"
