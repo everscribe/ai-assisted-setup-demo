@@ -1,4 +1,4 @@
-.PHONY: up down verify test-node check-clean dev-go dev-node
+.PHONY: up down verify test-node check-clean dev-go dev-node dev-rust
 
 up:
 	docker compose up --build -d
@@ -65,6 +65,10 @@ dev-go:
 dev-node:
 	cd apps/node/web && pnpm install --frozen-lockfile && pnpm run build
 	cd apps/node && pnpm install --frozen-lockfile && PORT=9002 pnpm run dev
+
+dev-rust:
+	cd apps/rust/web && pnpm install --frozen-lockfile && pnpm run build
+	cd apps/rust && PORT=9003 cargo run --release
 
 check-clean:
 	@files=""; \
