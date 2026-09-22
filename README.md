@@ -26,7 +26,7 @@ each other over HTTP.
 | App | Backend | Frontend | Status |
 |---|---|---|---|
 | `apps/go` | Gin | React | available |
-| `apps/node` | Express | Svelte | planned |
+| `apps/node` | Express | Svelte | available |
 | `apps/rust` | Axum | vanilla TS | planned |
 | `apps/python` | FastAPI | Vue | planned |
 
@@ -37,15 +37,19 @@ Requires Go 1.25+, Node 18+ with `pnpm` (via `corepack enable`), Rust
 
 ```bash
 make dev-go      # build the SPA and run the Go server on :9001
+make dev-node    # build the SPA and run the Node server on :9002
 ```
 
-Open <http://localhost:9001> and
+Open <http://localhost:9001> (Go) or <http://localhost:9002> (Node) and
 sign in as one of the seeded users. For hot reload, run the Vite dev
 server against the API instead:
 
 ```bash
 cd apps/go && go run .                # Go API on :9001
 cd apps/go/web && pnpm run dev        # Vite dev server, /api proxied
+
+cd apps/node && pnpm run dev          # Node API on :9002
+cd apps/node/web && pnpm run dev      # Vite dev server, /api proxied
 
 ```
 
@@ -59,7 +63,7 @@ make down    # docker compose down
 make verify  # bring all four up, run the conformance suite, tear down
 ```
 
-Then open <http://localhost:9001>.
+Then open <http://localhost:9001> (Go) or <http://localhost:9002> (Node).
 
 ## Pointing the setup flow at a single app
 

@@ -37,4 +37,12 @@ jobs:
           unformatted=$(gofmt -l contract/conformance)
           if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
       - run: cd contract/conformance && go vet ./...
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: apps/node unit tests
+        run: make test-node
       - run: make verify
