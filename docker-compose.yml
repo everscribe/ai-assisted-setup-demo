@@ -9,3 +9,8 @@ services:
     ports: ["9002:9002"]
     environment:
       PORT: "9002"
+  rust:
+    build: ./apps/rust
+    ports: ["9003:9003"]
+    environment:
+      PORT: "9003"
