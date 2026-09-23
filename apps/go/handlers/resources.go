@@ -6,6 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/everscribe/sdk-go/pkg/event"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
@@ -63,11 +65,19 @@ func RegisterResource(s store.Store) gin.HandlerFunc {
 		if in.Sensitivity == "" {
 			in.Sensitivity = models.SensitivityInternal
 		}
+		e := event.Current(c.Request.Context())
+		e.Action = "resource.registered"
+		e.TenantID = me.OrganizationID
+		e.WithFields("name", in.Name, "sensitivity", in.Sensitivity)
+
 		r2, err := s.RegisterResource(c.Request.Context(), me.OrganizationID, in.Name, in.Description, in.Sensitivity, me.ID)
 		if err != nil {
 			failStore(c, err)
 			return
 		}
+
+		e.Target = event.Target{Type: "resource", ID: r2.ID}
+
 		c.JSON(http.StatusCreated, r2)
 	}
 }
@@ -86,6 +96,11 @@ func DecommissionResource(s store.Store) gin.HandlerFunc {
 		if !requireAdmin(c, me) {
 			return
 		}
+		e := event.Current(c.Request.Context())
+		e.Action = "resource.decommissioned"
+		e.Target = event.Target{Type: "resource", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+
 		res, err := s.DecommissionResource(c.Request.Context(), me.OrganizationID, c.Param("id"))
 		if err != nil {
 			failStore(c, err)

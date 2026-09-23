@@ -25,6 +25,7 @@ Captured path parameters are still decoded, in handlers._path_id.
 from http import HTTPStatus
 from pathlib import Path
 
+from everscribe.asgi import EverscribeMiddleware
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
@@ -33,6 +34,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Receive, Scope, Send
 
 from app import handlers
+from app.audit import Audit, make_embed_token, make_resolve_actor
 from app.handlers import JSON, fail
 from app.store import Store
 
@@ -126,12 +128,22 @@ def _allowed_methods(app: FastAPI, path: str) -> list[str]:
     return sorted(methods)
 
 
-def build_app(store: Store) -> FastAPI:
+def build_app(store: Store, audit: Audit | None = None) -> FastAPI:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.router.redirect_slashes = False
 
     for path, methods, handler in ROUTES:
         app.add_api_route(path, _bind(handler, store), methods=methods)
+
+    if audit is not None:
+        # Outside /api deliberately: this route is not in
+        # contract/openapi.yaml, and the conformance harness compares the
+        # four apps over the /api surface only.
+        app.add_api_route(
+            "/everscribe/embed-token",
+            make_embed_token(audit.minter, store),
+            methods=["POST"],
+        )
 
     # check_dir=False lets this construct before task 4 builds web/dist;
     # StaticFiles still raises on the first request, so the directory is
@@ -163,6 +175,18 @@ def build_app(store: Store) -> FastAPI:
         return fail(exc.status_code, message)
 
     app.add_exception_handler(StarletteHTTPException, _http_exception)
+
+    if audit is not None:
+        app.add_middleware(
+            EverscribeMiddleware,
+            recorder=audit.recorder,
+            resolve_actor=make_resolve_actor(store),
+        )
+
+    # Added last, so it runs first: Starlette's add_middleware prepends, and
+    # the last-added middleware ends up outermost. RawPathMiddleware has to
+    # stay outermost because it rewrites scope["path"] before routing, which
+    # puts the audit middleware inside it - the right place for it anyway.
     app.add_middleware(RawPathMiddleware)
     return app
 

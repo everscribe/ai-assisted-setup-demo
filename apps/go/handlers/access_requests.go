@@ -6,6 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/everscribe/sdk-go/pkg/event"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
@@ -50,11 +52,23 @@ func RequestAccess(s store.Store) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "reason required")
 			return
 		}
+		// Target is the resource until the request exists; a refusal
+		// (decommissioned resource, or a cross-tenant miss) still says
+		// what was being asked for.
+		e := event.Current(c.Request.Context())
+		e.Action = "access_request.submitted"
+		e.Target = event.Target{Type: "resource", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+		e.WithField("reason", in.Reason)
+
 		req, err := s.RequestAccess(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID, in.Reason)
 		if err != nil {
 			failStore(c, err)
 			return
 		}
+
+		e.Target = event.Target{Type: "access_request", ID: req.ID}
+
 		c.JSON(http.StatusCreated, req)
 	}
 }
@@ -72,6 +86,13 @@ func ApproveRequest(s store.Store) gin.HandlerFunc {
 		if !requireAdmin(c, me) {
 			return
 		}
+		// Named before the store call: a refused decision (already
+		// decided, wrong tenant) is as auditable as an accepted one.
+		e := event.Current(c.Request.Context())
+		e.Action = "access_request.approved"
+		e.Target = event.Target{Type: "access_request", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+
 		req, err := s.ApproveRequest(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID)
 		if err != nil {
 			failStore(c, err)
@@ -94,6 +115,13 @@ func DenyRequest(s store.Store) gin.HandlerFunc {
 		if !requireAdmin(c, me) {
 			return
 		}
+		// Named before the store call: a refused decision (already
+		// decided, wrong tenant) is as auditable as an accepted one.
+		e := event.Current(c.Request.Context())
+		e.Action = "access_request.denied"
+		e.Target = event.Target{Type: "access_request", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+
 		req, err := s.DenyRequest(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID)
 		if err != nil {
 			failStore(c, err)
@@ -117,6 +145,13 @@ func RevokeRequest(s store.Store) gin.HandlerFunc {
 		if !requireAdmin(c, me) {
 			return
 		}
+		// Named before the store call: a refused decision (already
+		// decided, wrong tenant) is as auditable as an accepted one.
+		e := event.Current(c.Request.Context())
+		e.Action = "access_request.revoked"
+		e.Target = event.Target{Type: "access_request", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+
 		req, err := s.RevokeRequest(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID)
 		if err != nil {
 			failStore(c, err)
@@ -167,6 +202,16 @@ func AddComment(s store.Store) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "body required")
 			return
 		}
+		// The comment is part of the approval trail, so the event points
+		// at the access request rather than at the comment row. The body
+		// is deliberately not copied into metadata: it is free text a
+		// requester typed, and the audit log is not the place to
+		// duplicate it.
+		e := event.Current(c.Request.Context())
+		e.Action = "access_request.commented"
+		e.Target = event.Target{Type: "access_request", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+
 		cm, err := s.AddComment(c.Request.Context(), me.OrganizationID, c.Param("id"), me.ID, in.Body)
 		if err != nil {
 			failStore(c, err)

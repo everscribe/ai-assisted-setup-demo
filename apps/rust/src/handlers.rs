@@ -15,6 +15,9 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use everscribe::axum::CurrentEvent;
+use everscribe::event::Target;
+
 use crate::models::User;
 use crate::store::{Store, StoreError};
 
@@ -23,7 +26,7 @@ pub type AppState = Arc<dyn Store>;
 /// Every response that has a body carries exactly this.
 const JSON: &str = "application/json; charset=utf-8";
 
-fn json_response(status: StatusCode, body: &impl Serialize) -> Response {
+pub fn json_response(status: StatusCode, body: &impl Serialize) -> Response {
     let bytes = serde_json::to_vec(body).expect("response serializes");
     Response::builder()
         .status(status)
@@ -107,22 +110,53 @@ fn str_field<'a>(body: &'a Value, key: &str) -> Result<&'a str, Response> {
 
 // ---------------------------------------------------------------- routes
 
-pub async fn login(State(store): State<AppState>, body: Bytes) -> Result<Response, Response> {
+pub async fn login(
+    State(store): State<AppState>,
+    ev: CurrentEvent,
+    body: Bytes,
+) -> Result<Response, Response> {
     let b = parse_body(&body)?;
     // Pointedly not trimmed: the email is matched exactly.
     let email = str_field(&b, "email")?;
     if email.is_empty() {
         return Err(fail(StatusCode::BAD_REQUEST, "email required"));
     }
+
+    // Named here, after the body checks but before the lookup, so a
+    // rejected sign-in still records: the layer fills the outcome from the
+    // response, so the 401 below lands as user.login with an error result
+    // and no tenant. The 400s above return without an action and record
+    // nothing, which is the intent - a malformed body reached no account.
+    ev.with(|e| e.action = "user.login".into());
+
     let user = store
         .find_user_by_email(email)
         .await
         .map_err(|_| fail(StatusCode::UNAUTHORIZED, "no user with that email"))?;
+
+    // Only known once the email resolves. A failed sign-in has no tenant
+    // to attribute, by construction.
+    ev.with(|e| {
+        e.target = Target::new("user", &user.id);
+        e.tenant_id = user.organization_id.clone();
+    });
+
     Ok(json_response(StatusCode::OK, &user))
 }
 
-pub async fn logout(State(store): State<AppState>, headers: HeaderMap) -> Result<Response, Response> {
-    require_actor(&headers, &store).await?;
+pub async fn logout(
+    State(store): State<AppState>,
+    ev: CurrentEvent,
+    headers: HeaderMap,
+) -> Result<Response, Response> {
+    let actor = require_actor(&headers, &store).await?;
+
+    ev.with(|e| {
+        e.action = "user.logout".into();
+        e.target = Target::new("user", &actor.id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     Ok(no_content())
 }
 
@@ -142,6 +176,7 @@ pub async fn list_members(State(store): State<AppState>, headers: HeaderMap) -> 
 
 pub async fn invite_member(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
@@ -155,20 +190,42 @@ pub async fn invite_member(
     }
     // Not trimmed and not validated: anything but admin defaults to member.
     let role = str_field(&b, "role")?;
+
+    // Named before the store call, so a conflict (409, email already in
+    // the org) records as a failed invite rather than vanishing.
+    ev.with(|e| {
+        e.action = "member.invited".into();
+        e.tenant_id = actor.organization_id.clone();
+        e.metadata.insert("email".into(), email.into());
+        e.metadata.insert("role".into(), role.into());
+    });
+
     let user = store
         .invite_member(&actor.organization_id, name, email, role)
         .await
         .map_err(fail_store)?;
+
+    // The new member's id only exists after the store accepts it.
+    ev.with(|e| e.target = Target::new("user", &user.id));
+
     Ok(json_response(StatusCode::CREATED, &user))
 }
 
 pub async fn remove_member(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, Response> {
     let actor = require_actor(&headers, &store).await?;
     require_admin(&actor)?;
+
+    ev.with(|e| {
+        e.action = "member.removed".into();
+        e.target = Target::new("user", &id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     store
         .remove_member(&actor.organization_id, &id)
         .await
@@ -178,6 +235,7 @@ pub async fn remove_member(
 
 pub async fn change_member_role(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Bytes,
@@ -190,6 +248,17 @@ pub async fn change_member_role(
     if role != "admin" && role != "member" {
         return Err(fail(StatusCode::BAD_REQUEST, "role must be admin or member"));
     }
+
+    // A privilege change is the event an auditor reads first, so it is
+    // named before the store call and carries the requested role even when
+    // the call is refused.
+    ev.with(|e| {
+        e.action = "member.role.changed".into();
+        e.target = Target::new("user", &id);
+        e.tenant_id = actor.organization_id.clone();
+        e.metadata.insert("role".into(), role.into());
+    });
+
     let user = store
         .update_member_role(&actor.organization_id, &id, role)
         .await
@@ -208,6 +277,7 @@ pub async fn list_resources(State(store): State<AppState>, headers: HeaderMap) -
 
 pub async fn register_resource(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, Response> {
@@ -221,20 +291,39 @@ pub async fn register_resource(
     let description = str_field(&b, "description")?.trim();
     // Trimmed but not required; empty means internal.
     let sensitivity = str_field(&b, "sensitivity")?.trim();
+
+    ev.with(|e| {
+        e.action = "resource.registered".into();
+        e.tenant_id = actor.organization_id.clone();
+        e.metadata.insert("name".into(), name.into());
+        e.metadata.insert("sensitivity".into(), sensitivity.into());
+    });
+
     let resource = store
         .register_resource(&actor.organization_id, name, description, sensitivity, &actor.id)
         .await
         .map_err(fail_store)?;
+
+    ev.with(|e| e.target = Target::new("resource", &resource.id));
+
     Ok(json_response(StatusCode::CREATED, &resource))
 }
 
 pub async fn decommission_resource(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, Response> {
     let actor = require_actor(&headers, &store).await?;
     require_admin(&actor)?;
+
+    ev.with(|e| {
+        e.action = "resource.decommissioned".into();
+        e.target = Target::new("resource", &id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     let resource = store
         .decommission_resource(&actor.organization_id, &id)
         .await
@@ -257,6 +346,7 @@ pub async fn list_resource_requests(
 
 pub async fn request_access(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Bytes,
@@ -269,20 +359,44 @@ pub async fn request_access(
     if reason.is_empty() {
         return Err(fail(StatusCode::BAD_REQUEST, "reason required"));
     }
+
+    // Target is the resource until the request exists; a refusal
+    // (decommissioned resource, or a cross-tenant miss) still says what
+    // was being asked for.
+    ev.with(|e| {
+        e.action = "access_request.submitted".into();
+        e.target = Target::new("resource", &id);
+        e.tenant_id = actor.organization_id.clone();
+        e.metadata.insert("reason".into(), reason.into());
+    });
+
     let request = store
         .request_access(&actor.organization_id, &id, &actor.id, reason)
         .await
         .map_err(fail_store)?;
+
+    ev.with(|e| e.target = Target::new("access_request", &request.id));
+
     Ok(json_response(StatusCode::CREATED, &request))
 }
 
 pub async fn approve_request(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, Response> {
     let actor = require_actor(&headers, &store).await?;
     require_admin(&actor)?;
+
+    // Named before the store call: a refused decision (already decided,
+    // wrong tenant) is as auditable as an accepted one.
+    ev.with(|e| {
+        e.action = "access_request.approved".into();
+        e.target = Target::new("access_request", &id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     let request = store
         .approve_request(&actor.organization_id, &id, &actor.id)
         .await
@@ -292,11 +406,21 @@ pub async fn approve_request(
 
 pub async fn deny_request(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, Response> {
     let actor = require_actor(&headers, &store).await?;
     require_admin(&actor)?;
+
+    // Named before the store call: a refused decision (already decided,
+    // wrong tenant) is as auditable as an accepted one.
+    ev.with(|e| {
+        e.action = "access_request.denied".into();
+        e.target = Target::new("access_request", &id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     let request = store
         .deny_request(&actor.organization_id, &id, &actor.id)
         .await
@@ -306,11 +430,21 @@ pub async fn deny_request(
 
 pub async fn revoke_request(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<Response, Response> {
     let actor = require_actor(&headers, &store).await?;
     require_admin(&actor)?;
+
+    // Named before the store call: a refused decision (already decided,
+    // wrong tenant) is as auditable as an accepted one.
+    ev.with(|e| {
+        e.action = "access_request.revoked".into();
+        e.target = Target::new("access_request", &id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     let request = store
         .revoke_request(&actor.organization_id, &id, &actor.id)
         .await
@@ -333,6 +467,7 @@ pub async fn list_request_comments(
 
 pub async fn add_comment(
     State(store): State<AppState>,
+    ev: CurrentEvent,
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Bytes,
@@ -343,6 +478,17 @@ pub async fn add_comment(
     if text.is_empty() {
         return Err(fail(StatusCode::BAD_REQUEST, "body required"));
     }
+
+    // The comment is part of the approval trail, so the event points at
+    // the access request rather than at the comment row. The text is
+    // deliberately not copied into metadata: it is free text a requester
+    // typed, and the audit log is not the place to duplicate it.
+    ev.with(|e| {
+        e.action = "access_request.commented".into();
+        e.target = Target::new("access_request", &id);
+        e.tenant_id = actor.organization_id.clone();
+    });
+
     let comment = store
         .add_comment(&actor.organization_id, &id, &actor.id, text)
         .await

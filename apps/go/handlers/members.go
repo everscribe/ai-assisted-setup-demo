@@ -6,6 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/everscribe/sdk-go/pkg/event"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/models"
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
@@ -58,11 +60,22 @@ func InviteMember(s store.Store) gin.HandlerFunc {
 		if in.Role != models.RoleAdmin && in.Role != models.RoleMember {
 			in.Role = models.RoleMember
 		}
+		// Named before the store call, so a conflict (409, email already
+		// in the org) records as a failed invite rather than vanishing.
+		e := event.Current(c.Request.Context())
+		e.Action = "member.invited"
+		e.TenantID = me.OrganizationID
+		e.WithFields("email", in.Email, "role", in.Role)
+
 		u, err := s.InviteMember(c.Request.Context(), me.OrganizationID, in.Name, in.Email, in.Role)
 		if err != nil {
 			failStore(c, err)
 			return
 		}
+
+		// The new member's id only exists after the store accepts it.
+		e.Target = event.Target{Type: "user", ID: u.ID}
+
 		c.JSON(http.StatusCreated, u)
 	}
 }
@@ -79,6 +92,11 @@ func RemoveMember(s store.Store) gin.HandlerFunc {
 		if !requireAdmin(c, me) {
 			return
 		}
+		e := event.Current(c.Request.Context())
+		e.Action = "member.removed"
+		e.Target = event.Target{Type: "user", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+
 		if err := s.RemoveMember(c.Request.Context(), me.OrganizationID, c.Param("id")); err != nil {
 			failStore(c, err)
 			return
@@ -111,6 +129,15 @@ func ChangeMemberRole(s store.Store) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "role must be admin or member")
 			return
 		}
+		// A privilege change is the event an auditor reads first, so it
+		// is named before the store call and carries the requested role
+		// even when the call is refused.
+		e := event.Current(c.Request.Context())
+		e.Action = "member.role.changed"
+		e.Target = event.Target{Type: "user", ID: c.Param("id")}
+		e.TenantID = me.OrganizationID
+		e.WithField("role", in.Role)
+
 		u, err := s.UpdateMemberRole(c.Request.Context(), me.OrganizationID, c.Param("id"), in.Role)
 		if err != nil {
 			failStore(c, err)

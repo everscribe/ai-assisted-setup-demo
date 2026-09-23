@@ -3,6 +3,7 @@ module github.com/everscribe/ai-assisted-setup-demo/apps/go
 go 1.25.0
 
 require (
+	github.com/everscribe/sdk-go v0.0.0-20260725101252-68aef52a4a9b
 	github.com/gin-gonic/gin v1.12.0
 	github.com/stretchr/testify v1.12.1
 )

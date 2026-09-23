@@ -23,7 +23,7 @@ func TestBareAPIPathIsJSON404NotRedirect(t *testing.T) {
 	static := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	root := newRootMux(handlers.Router(s), static)
+	root := newRootMux(handlers.Router(s), static, nil)
 
 	for _, path := range []string{"/api", "/api/"} {
 		w := httptest.NewRecorder()
@@ -47,7 +47,7 @@ func TestEmptySegmentIsJSON404NotRedirect(t *testing.T) {
 	static := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	root := newRootMux(handlers.Router(s), static)
+	root := newRootMux(handlers.Router(s), static, nil)
 
 	for _, path := range []string{"/api//me", "/api//resources", "/api/resources//"} {
 		w := httptest.NewRecorder()
@@ -86,7 +86,7 @@ func TestDotSegmentIsJSON404NotRedirect(t *testing.T) {
 	static := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	root := newRootMux(handlers.Router(s), static)
+	root := newRootMux(handlers.Router(s), static, nil)
 
 	// The last two are the percent-encoded spellings. They never reach the
 	// guard: ServeMux matches on escaped segments, so a %2e is an ordinary

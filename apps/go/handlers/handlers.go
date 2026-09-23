@@ -130,10 +130,18 @@ func requireAdmin(c *gin.Context, u *models.User) bool {
 
 // Router builds the full API. The eighteen registrations here are the
 // contract; all four apps in this repo register the same set.
-func Router(s store.Store) *gin.Engine {
+//
+// mw is variadic so the existing call sites - every test in this package
+// and in main_test.go - keep compiling unchanged, while main.go passes
+// the Everscribe audit middleware. It has to be applied here rather than
+// with engine.Use after Router returns, because gin freezes each route's
+// handler chain at registration time: middleware added afterwards would
+// silently apply to nothing.
+func Router(s store.Store, mw ...gin.HandlerFunc) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(mw...)
 
 	// A trailing slash or a near-miss path must not redirect. A redirect
 	// is a usable oracle for "this path exists"; falling through to the

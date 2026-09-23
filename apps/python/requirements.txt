@@ -2,3 +2,5 @@
 # `.venv/bin/pip freeze`.
 fastapi==0.141.1
 uvicorn==0.53.0
+# The [fastapi] extra pulls in Starlette, which everscribe.asgi requires.
+everscribe[fastapi]==0.0.0

@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/everscribe/sdk-go/pkg/event"
+
 	"github.com/everscribe/ai-assisted-setup-demo/apps/go/store"
 )
 
@@ -27,11 +29,27 @@ func Login(s store.Store) gin.HandlerFunc {
 			fail(c, http.StatusBadRequest, "email required")
 			return
 		}
+
+		// Named here, after the body checks but before the lookup, so a
+		// rejected sign-in still records: the adapter fills Result from
+		// the response, so the 401 below lands as user.login with an
+		// error result and no tenant. The two 400s above return without
+		// an Action and record nothing, which is the intent - a
+		// malformed body reached no account to speak of.
+		e := event.Current(c.Request.Context())
+		e.Action = "user.login"
+
 		u, err := s.FindUserByEmail(c.Request.Context(), in.Email)
 		if err != nil {
 			fail(c, http.StatusUnauthorized, "no user with that email")
 			return
 		}
+
+		// Only known once the email resolves. A failed sign-in has no
+		// tenant to attribute, by construction.
+		e.Target = event.Target{Type: "user", ID: u.ID}
+		e.TenantID = u.OrganizationID
+
 		c.JSON(http.StatusOK, u)
 	}
 }
@@ -43,10 +61,16 @@ func Login(s store.Store) gin.HandlerFunc {
 // POST /api/logout → 204
 func Logout(s store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		_, ok := requireActor(c, s)
+		u, ok := requireActor(c, s)
 		if !ok {
 			return
 		}
+
+		e := event.Current(c.Request.Context())
+		e.Action = "user.logout"
+		e.Target = event.Target{Type: "user", ID: u.ID}
+		e.TenantID = u.OrganizationID
+
 		c.Status(http.StatusNoContent)
 	}
 }

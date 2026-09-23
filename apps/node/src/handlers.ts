@@ -100,8 +100,22 @@ export async function handleLogin(req: Request, res: Response, store: Store): Pr
   const field = requiredStringField(body, "email", false);
   if (!field.ok && field.kind === "invalid") return fail(res, 400, "invalid body");
   if (!field.ok) return fail(res, 400, "email required");
+
+  // Named here, after the body checks but before the lookup, so a
+  // rejected sign-in still records: the middleware fills result from the
+  // response, so the 401 below lands as user.login with an error result
+  // and no tenant. The 400s above return without an action and record
+  // nothing, which is the intent - a malformed body reached no account.
+  if (req.event) req.event.action = "user.login";
+
   try {
     const user = await store.findUserByEmail(field.value);
+    // Only known once the email resolves. A failed sign-in has no tenant
+    // to attribute, by construction.
+    if (req.event) {
+      req.event.target = { type: "user", id: user.id };
+      req.event.tenantId = user.organization_id;
+    }
     res.status(200).json(user);
   } catch {
     fail(res, 401, "no user with that email");
@@ -112,6 +126,13 @@ export async function handleLogin(req: Request, res: Response, store: Store): Pr
 export async function handleLogout(req: Request, res: Response, store: Store): Promise<void> {
   const actor = await requireActor(req, res, store);
   if (!actor) return;
+
+  if (req.event) {
+    req.event.action = "user.logout";
+    req.event.target = { type: "user", id: actor.id };
+    req.event.tenantId = actor.organization_id;
+  }
+
   res.status(204).end();
 }
 
@@ -153,8 +174,18 @@ export async function handleInviteMember(req: Request, res: Response, store: Sto
   if (rawRole !== undefined && typeof rawRole !== "string") return fail(res, 400, "invalid body");
   const role = rawRole === "admin" || rawRole === "member" ? rawRole : "member";
 
+  // Named before the store call, so a conflict (409, email already in
+  // the org) records as a failed invite rather than vanishing.
+  if (req.event) {
+    req.event.action = "member.invited";
+    req.event.tenantId = actor.organization_id;
+    req.event.withFields("email", email.value, "role", role);
+  }
+
   try {
     const member = await store.inviteMember(actor.organization_id, name.value, email.value, role);
+    // The new member's id only exists after the store accepts it.
+    if (req.event) req.event.target = { type: "user", id: member.id };
     res.status(201).json(member);
   } catch (err) {
     failStore(res, err);
@@ -166,6 +197,13 @@ export async function handleRemoveMember(req: Request, res: Response, store: Sto
   const actor = await requireActor(req, res, store);
   if (!actor) return;
   if (!requireAdmin(res, actor)) return;
+
+  if (req.event) {
+    req.event.action = "member.removed";
+    req.event.target = { type: "user", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+  }
+
   try {
     await store.removeMember(actor.organization_id, idParam(req));
     res.status(204).end();
@@ -193,6 +231,16 @@ export async function handleUpdateMemberRole(req: Request, res: Response, store:
   // padded string all fail this the same way.
   const role = rawRole;
   if (role !== "admin" && role !== "member") return fail(res, 400, "role must be admin or member");
+
+  // A privilege change is the event an auditor reads first, so it is
+  // named before the store call and carries the requested role even when
+  // the call is refused.
+  if (req.event) {
+    req.event.action = "member.role.changed";
+    req.event.target = { type: "user", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+    req.event.withField("role", role);
+  }
 
   try {
     const member = await store.updateMemberRole(actor.organization_id, idParam(req), role);
@@ -230,6 +278,12 @@ export async function handleRegisterResource(req: Request, res: Response, store:
   if (!sensitivityField.ok) return fail(res, 400, "invalid body");
   const sensitivity = sensitivityField.value === "" ? "internal" : sensitivityField.value;
 
+  if (req.event) {
+    req.event.action = "resource.registered";
+    req.event.tenantId = actor.organization_id;
+    req.event.withFields("name", name.value, "sensitivity", sensitivity);
+  }
+
   try {
     const resource = await store.registerResource(
       actor.organization_id,
@@ -238,6 +292,7 @@ export async function handleRegisterResource(req: Request, res: Response, store:
       sensitivity,
       actor.id,
     );
+    if (req.event) req.event.target = { type: "resource", id: resource.id };
     res.status(201).json(resource);
   } catch (err) {
     failStore(res, err);
@@ -249,6 +304,12 @@ export async function handleDecommissionResource(req: Request, res: Response, st
   const actor = await requireActor(req, res, store);
   if (!actor) return;
   if (!requireAdmin(res, actor)) return;
+  if (req.event) {
+    req.event.action = "resource.decommissioned";
+    req.event.target = { type: "resource", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+  }
+
   try {
     const resource = await store.decommissionResource(actor.organization_id, idParam(req));
     res.status(200).json(resource);
@@ -283,8 +344,19 @@ export async function handleRequestAccess(req: Request, res: Response, store: St
   if (!reason.ok && reason.kind === "invalid") return fail(res, 400, "invalid body");
   if (!reason.ok) return fail(res, 400, "reason required");
 
+  // Target is the resource until the request exists; a refusal
+  // (decommissioned resource, or a cross-tenant miss) still says what was
+  // being asked for.
+  if (req.event) {
+    req.event.action = "access_request.submitted";
+    req.event.target = { type: "resource", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+    req.event.withField("reason", reason.value);
+  }
+
   try {
     const request = await store.requestAccess(actor.organization_id, idParam(req), actor.id, reason.value);
+    if (req.event) req.event.target = { type: "access_request", id: request.id };
     res.status(201).json(request);
   } catch (err) {
     failStore(res, err);
@@ -296,6 +368,15 @@ export async function handleApproveRequest(req: Request, res: Response, store: S
   const actor = await requireActor(req, res, store);
   if (!actor) return;
   if (!requireAdmin(res, actor)) return;
+
+  // Named before the store call: a refused decision (already decided,
+  // wrong tenant) is as auditable as an accepted one.
+  if (req.event) {
+    req.event.action = "access_request.approved";
+    req.event.target = { type: "access_request", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+  }
+
   try {
     const request = await store.approveRequest(actor.organization_id, idParam(req), actor.id);
     res.status(200).json(request);
@@ -309,6 +390,15 @@ export async function handleDenyRequest(req: Request, res: Response, store: Stor
   const actor = await requireActor(req, res, store);
   if (!actor) return;
   if (!requireAdmin(res, actor)) return;
+
+  // Named before the store call: a refused decision (already decided,
+  // wrong tenant) is as auditable as an accepted one.
+  if (req.event) {
+    req.event.action = "access_request.denied";
+    req.event.target = { type: "access_request", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+  }
+
   try {
     const request = await store.denyRequest(actor.organization_id, idParam(req), actor.id);
     res.status(200).json(request);
@@ -322,6 +412,15 @@ export async function handleRevokeRequest(req: Request, res: Response, store: St
   const actor = await requireActor(req, res, store);
   if (!actor) return;
   if (!requireAdmin(res, actor)) return;
+
+  // Named before the store call: a refused decision (already decided,
+  // wrong tenant) is as auditable as an accepted one.
+  if (req.event) {
+    req.event.action = "access_request.revoked";
+    req.event.target = { type: "access_request", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+  }
+
   try {
     const request = await store.revokeRequest(actor.organization_id, idParam(req), actor.id);
     res.status(200).json(request);
@@ -353,6 +452,16 @@ export async function handleAddComment(req: Request, res: Response, store: Store
   const commentBody = requiredStringField(body, "body", true);
   if (!commentBody.ok && commentBody.kind === "invalid") return fail(res, 400, "invalid body");
   if (!commentBody.ok) return fail(res, 400, "body required");
+
+  // The comment is part of the approval trail, so the event points at the
+  // access request rather than at the comment row. The body is
+  // deliberately not copied into metadata: it is free text a requester
+  // typed, and the audit log is not the place to duplicate it.
+  if (req.event) {
+    req.event.action = "access_request.commented";
+    req.event.target = { type: "access_request", id: idParam(req) };
+    req.event.tenantId = actor.organization_id;
+  }
 
   try {
     const comment = await store.addComment(actor.organization_id, idParam(req), actor.id, commentBody.value);
