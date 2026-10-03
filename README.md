@@ -73,10 +73,3 @@ make verify  # bring all four up, run the conformance suite, tear down
 
 Then open <http://localhost:9001> (Go), <http://localhost:9002> (Node),
 <http://localhost:9003> (Rust) or <http://localhost:9004> (Python).
-
-## Pointing the setup flow at a single app
-
-Both the hosted flow and the BYOK skill instrument one app at a time. Point
-either one at the subdirectory for the app you want to instrument, for
-example `apps/go`, rather than the repo root. Each app is a complete,
-independently buildable project with its own manifest and lockfile.
