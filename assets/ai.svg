@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="AI">
+  <title>AI</title>
+  <!-- Four-point sparkle, the common glyph for AI assistance.
+       Each arm is a quadratic curve whose control point is the sparkle's own
+       centre, which is what pulls the waist concave: a straight-line version
+       of the same four points would read as a diamond.
+       Sized to fill the 200 box, because it sits beside everscribe.svg, which
+       is a solid tile edge to edge, and transparent margin here would make
+       this icon look smaller than it is. -->
+  <path fill="#0e7c86"
+        d="M78 10 Q78 82 150 82 Q78 82 78 154 Q78 82 6 82 Q78 82 78 10 Z"/>
+  <path fill="#0e7c86" opacity="0.55"
+        d="M158 120 Q158 156 194 156 Q158 156 158 192 Q158 156 122 156 Q158 156 158 120 Z"/>
+</svg>
