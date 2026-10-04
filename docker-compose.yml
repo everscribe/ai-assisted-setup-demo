@@ -1,21 +1,32 @@
+# The EVERSCRIBE_* keys carry no value, so compose passes each through
+# from the shell (or a .env file next to this one) and never commits a
+# credential here.
 services:
   go:
     build: ./apps/go
     ports: ["9001:9001"]
     environment:
       PORT: "9001"
+      EVERSCRIBE_PROJECT_ID:
+      EVERSCRIBE_API_KEY:
   node:
     build: ./apps/node
     ports: ["9002:9002"]
     environment:
       PORT: "9002"
+      EVERSCRIBE_PROJECT_ID:
+      EVERSCRIBE_API_KEY:
   rust:
     build: ./apps/rust
     ports: ["9003:9003"]
     environment:
       PORT: "9003"
+      EVERSCRIBE_PROJECT_ID:
+      EVERSCRIBE_API_KEY:
   python:
     build: ./apps/python
     ports: ["9004:9004"]
     environment:
       PORT: "9004"
+      EVERSCRIBE_PROJECT_ID:
+      EVERSCRIBE_API_KEY:
