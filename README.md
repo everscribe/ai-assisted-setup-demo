@@ -8,9 +8,8 @@
 # ai-assisted-setup-demo
 
 This is a sample repo you can use to get a feel for how you can use AI to
-set up [Everscribe](https://everscribe.io) for your codebase, either using the
-[hosted agent flow](https://everscribe.io/docs/quickstart/hosted-ui)
-or the [BYOK flow](https://everscribe.io/docs/quickstart/skill).
+set up [Everscribe](https://everscribe.io) for your codebase with the
+[Claude setup skill](https://everscribe.io/docs/quickstart/skill).
 
 </div>
 
