@@ -6,7 +6,7 @@ from a single binary. Deliberately uninstrumented, see the root README.
 ## Running it
 
 ```bash
-make dev-go   # from the repo root: builds the SPA and runs the server
+make dev-go   # from the repo root: builds and runs this app's container
 ```
 
 Serves on `:9001` (override with the `PORT` env var).

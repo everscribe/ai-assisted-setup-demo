@@ -58,24 +58,19 @@ verify:
 test-node:
 	cd apps/node && pnpm install --frozen-lockfile && pnpm test
 
+# One app in its container, in the foreground, with the same build, port
+# and EVERSCRIBE_* passthrough docker-compose.yml gives it under `make up`.
 dev-go:
-	cd apps/go/web && pnpm install --frozen-lockfile && pnpm run build
-	cd apps/go && PORT=9001 go run .
+	docker compose up --build go
 
 dev-node:
-	cd apps/node/web && pnpm install --frozen-lockfile && pnpm run build
-	cd apps/node && pnpm install --frozen-lockfile && PORT=9002 pnpm run dev
+	docker compose up --build node
 
 dev-rust:
-	cd apps/rust/web && pnpm install --frozen-lockfile && pnpm run build
-	cd apps/rust && PORT=9003 cargo run --release
+	docker compose up --build rust
 
-# The venv step is this app's `pnpm install --frozen-lockfile`: creating
-# a venv that already exists is a no-op, so this is safe to re-run.
 dev-python:
-	cd apps/python/web && pnpm install --frozen-lockfile && pnpm run build
-	cd apps/python && python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
-	cd apps/python && PORT=9004 .venv/bin/python -m app.main
+	docker compose up --build python
 
 check-clean:
 	@files=""; \
